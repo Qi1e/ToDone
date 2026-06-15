@@ -1,0 +1,21 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "ToDone"
+    },
+    {
+      "name": "module_desc",
+      "value": "ToDone entry module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "ToDone app"
+    },
+    {
+      "name": "form_desc",
+      "value": "ToDone 服务卡片"
+    }
+  ]
+}
+

@@ -1,0 +1,45 @@
+{
+  "forms": [
+    {
+      "name": "single_matter_card",
+      "displayName": "单事项卡片",
+      "description": "查看并记录一个事项",
+      "src": "./ets/widget/pages/SingleMatterCard",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDefault": true,
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "defaultDimension": "2*2",
+      "supportDimensions": [
+        "2*2",
+        "2*4"
+      ]
+    },
+    {
+      "name": "summary_card",
+      "displayName": "汇总卡片",
+      "description": "查看多个事项的主要信息",
+      "src": "./ets/widget/pages/SummaryCard",
+      "uiSyntax": "arkts",
+      "window": {
+        "designWidth": 720,
+        "autoDesignWidth": true
+      },
+      "colorMode": "auto",
+      "isDefault": false,
+      "updateEnabled": true,
+      "updateDuration": 1,
+      "defaultDimension": "2*4",
+      "supportDimensions": [
+        "2*4",
+        "4*4"
+      ]
+    }
+  ]
+}
+

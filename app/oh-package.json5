@@ -1,0 +1,10 @@
+{
+  "name": "todone",
+  "version": "1.0.0",
+  "description": "ToDone HarmonyOS native app",
+  "main": "",
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {}
+}
+
