@@ -1,5 +1,7 @@
 # 模块系统
 
+需求以 [产品规格](../PROJECT_SPEC.md) 为准，下表描述当前 V1 实现范围，不表示实机验收通过。实现参考 [详情页](../app/entry/src/main/ets/pages/MatterDetail.ets) 与 [存储层](../app/entry/src/main/ets/store/MatterStore.ets)，修改行为时同步表格。
+
 模块用于描述事项需要哪些记录能力，而不是把事项划分为类型。
 
 ## V1 模块

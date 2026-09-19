@@ -7,22 +7,9 @@ ToDone app
 
 ---
 
-# 0. 给 AI / Codex 的工作要求
+# 0. 文档职责
 
-你正在协助开发一个 HarmonyOS 原生应用。
-
-请严格遵守以下要求：
-
-1. 不要把它做成 Todo App。
-2. 不要把它做成传统日历 App。
-3. 不要强迫用户使用任务、项目、目标、习惯、标签、分类等概念。
-4. 不要为了“功能完整”而加入复杂工作流。
-5. 所有用户可见概念必须使用中文。
-6. 代码内部可以使用英文命名，但 UI、文案、模块名、设置项必须使用中文。
-7. 优先保持低摩擦、直观、个人化。
-8. 不要把功能藏进右上角三个点菜单里。
-9. 如果某个功能需要用户理解复杂规则，先不要实现。
-10. 每次新增功能前，先判断它是否符合本项目的产品哲学。
+本文只维护当前产品需求，描述不等于已经实现。工作流程见 [AGENTS.md](AGENTS.md)，实际进度见 [TODO.md](TODO.md)，运行方式见 [开发说明](docs/development.md)。
 
 ---
 
@@ -156,30 +143,13 @@ ToDone app
 
 # 3. 目标平台
 
-必须支持：
+当前优先支持 HarmonyOS NEXT，采用 ArkTS、ArkUI、Stage 模型和 HarmonyOS 服务卡片。
+具体设备、系统与 DevEco/SDK 版本在完成验证后记录到 [开发说明](docs/development.md)。
 
-* HarmonyOS 4
-* HarmonyOS NEXT
+不再要求本轮同时兼容 HarmonyOS 4。其他 Android 系统作为后续可行性评估，不承诺当前 ArkTS/ArkUI 工程可以直接运行，也不据此提前迁移跨平台框架。
 
-目标设备：
-
-* Huawei Pura70 Pro
-* Huawei MatePad 11.2S
-
-技术路线：
-
-* ArkTS
-* ArkUI
-* HarmonyOS Service Widget / 服务卡片
-
-禁止优先使用：
-
-* Flutter
-* React Native
-* WebView 套壳
-* Android 原生优先方案
-
-本项目应当作为 HarmonyOS 原生应用开发。
+当前继续维护 HarmonyOS 原生实现。若要调整技术路线，先评估成本、功能差异与服务卡片支持，再由用户决定。
+历史替代关系见 [决策记录](DECISIONS.md)。
 
 ---
 
@@ -1317,62 +1287,7 @@ V1 目标是做出可用 MVP。
 
 ---
 
-# 18. AI 开发工作方式
-
-每次让 AI 工作时，应遵循以下流程：
-
-1. 先读取 PROJECT_SPEC.md。
-2. 只做当前里程碑。
-3. 不要主动扩展范围。
-4. 修改前先说明会改哪些文件。
-5. 修改后说明完成了什么。
-6. 如果遇到 HarmonyOS API 不确定，先写技术验证 Demo，不要直接集成到主项目。
-7. 每次完成后更新 CHANGELOG.md。
-8. 每次新增决策后更新 DECISIONS.md。
-9. 不要为了炫技加入复杂架构。
-10. 代码优先可读、可维护、可逐步扩展。
-
----
-
-# 19. 建议仓库文件结构
-
-```text
-/
-├─ PROJECT_SPEC.md
-├─ README.md
-├─ CHANGELOG.md
-├─ DECISIONS.md
-├─ TODO.md
-├─ docs/
-│  ├─ widget-technical-validation.md
-│  ├─ data-model.md
-│  ├─ module-system.md
-│  └─ design-principles.md
-└─ app/
-```
-
----
-
-# 20. 给 Codex 的初始任务建议
-
-第一条任务不要让 Codex 直接做完整 App。
-
-建议第一条任务：
-
-请阅读 PROJECT_SPEC.md，然后创建一个 HarmonyOS ArkTS 项目的基础架构方案。先不要写完整业务代码。请输出：
-
-1. 推荐目录结构。
-2. 核心数据模型。
-3. 模块系统设计。
-4. 本地存储方案。
-5. M0 技术验证清单。
-6. 第一阶段需要实现的最小页面列表。
-
-不要实现标签、项目树、Dashboard、时间轴、AI规划等不在范围内的功能。
-
----
-
-# 21. 项目最终愿景
+# 18. 项目最终愿景
 
 这个 App 的最终目标不是替代日历，也不是替代待办软件。
 
