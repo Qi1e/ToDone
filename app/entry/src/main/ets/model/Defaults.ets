@@ -8,8 +8,7 @@ import {
   ModuleInstance,
   ModuleOption,
   ModuleType,
-  NoteConfig,
-  ProgressConfig
+  NoteConfig
 } from './Types';
 
 export const CLUSTER_COLORS: string[] = [
@@ -23,7 +22,7 @@ export const CLUSTER_COLORS: string[] = [
 export const MODULE_OPTIONS: ModuleOption[] = [
   {
     type: ModuleType.EventRecord,
-    label: '事件记录',
+    label: '记录',
     description: '记录某件事发生的时刻'
   },
   {
@@ -32,19 +31,9 @@ export const MODULE_OPTIONS: ModuleOption[] = [
     description: '累加数值或每日一次'
   },
   {
-    type: ModuleType.Progress,
-    label: '进度',
-    description: '展示手动百分比'
-  },
-  {
     type: ModuleType.Deadline,
     label: '截止日期',
-    description: '记录关键日期和地点'
-  },
-  {
-    type: ModuleType.Countdown,
-    label: '倒计时',
-    description: '根据截止日期计算剩余天数'
+    description: '设置日期，自动显示倒计时'
   },
   {
     type: ModuleType.Note,
@@ -54,7 +43,7 @@ export const MODULE_OPTIONS: ModuleOption[] = [
   {
     type: ModuleType.Checklist,
     label: '列表',
-    description: '简单条目和完成状态'
+    description: '添加文字或关联事项'
   }
 ];
 
@@ -64,7 +53,10 @@ export function createId(prefix: string): string {
 
 export function moduleLabel(type: ModuleType): string {
   const matched = MODULE_OPTIONS.find((item: ModuleOption) => item.type === type);
-  return matched ? matched.label : '模块';
+  if (type === ModuleType.Countdown) {
+    return '截止日期';
+  }
+  return matched ? matched.label : '信息';
 }
 
 export function defaultConfigJson(type: ModuleType): string {
@@ -74,13 +66,6 @@ export function defaultConfigJson(type: ModuleType): string {
       unit: '次',
       fixedSteps: [1, 10]
     });
-  }
-  if (type === ModuleType.Progress) {
-    const config: ProgressConfig = {
-      mode: 'manual_percent',
-      percent: 0
-    };
-    return JSON.stringify(config);
   }
   if (type === ModuleType.Deadline) {
     const config: DeadlineConfig = {
@@ -123,15 +108,31 @@ export function createMatter(intent: CreateMatterIntent, orderIndex: number): Ma
     enabledModules: []
   };
 
-  if (intent.deadlineTimestamp) {
-    matter.enabledModules.push(createModuleInstance(matter.id, ModuleType.Deadline));
+  const selectedTypes = intent.enabledModuleTypes ?? [];
+  const hasDeadline = selectedTypes.includes(ModuleType.Deadline) || intent.deadlineTimestamp !== undefined;
+  if (hasDeadline) {
+    const deadline: DeadlineConfig = {
+      timestamp: intent.deadlineTimestamp ?? Date.now(),
+      hasTime: intent.deadlineHasTime ?? false,
+      location: intent.deadlineLocation?.trim()
+    };
+    const deadlineModule = createModuleInstance(matter.id, ModuleType.Deadline);
+    deadlineModule.configJson = JSON.stringify(deadline);
+    matter.enabledModules.push(deadlineModule);
     matter.enabledModules.push(createModuleInstance(matter.id, ModuleType.Countdown));
   }
 
-  if (intent.note && intent.note.trim().length > 0) {
+  selectedTypes.forEach((type: ModuleType) => {
+    if (type === ModuleType.Deadline || type === ModuleType.Countdown || type === ModuleType.Progress || type === ModuleType.Note) {
+      return;
+    }
+    matter.enabledModules.push(createModuleInstance(matter.id, type));
+  });
+
+  if (selectedTypes.includes(ModuleType.Note) || (intent.note && intent.note.trim().length > 0)) {
     const note = createModuleInstance(matter.id, ModuleType.Note);
     const config: NoteConfig = {
-      text: intent.note.trim()
+      text: intent.note?.trim() ?? ''
     };
     note.configJson = JSON.stringify(config);
     matter.enabledModules.push(note);
@@ -142,26 +143,24 @@ export function createMatter(intent: CreateMatterIntent, orderIndex: number): Ma
 
 export function createSeedState(): AppState {
   const now = Date.now();
-  const fitness = createMatter({ title: '健身', description: '记录运动次数和关键时刻' }, 0);
-  fitness.enabledModules = [
-    createModuleInstance(fitness.id, ModuleType.EventRecord),
-    createModuleInstance(fitness.id, ModuleType.Counter),
-    createModuleInstance(fitness.id, ModuleType.Note)
-  ];
+  const fitness = createMatter({
+    title: '健身',
+    description: '记录运动次数和关键时刻',
+    enabledModuleTypes: [ModuleType.EventRecord, ModuleType.Counter, ModuleType.Note]
+  }, 0);
 
-  const exam = createMatter({ title: '六级考试', description: '考试信息和准备进度' }, 1);
-  exam.enabledModules = [
-    createModuleInstance(exam.id, ModuleType.Deadline),
-    createModuleInstance(exam.id, ModuleType.Countdown),
-    createModuleInstance(exam.id, ModuleType.Progress),
-    createModuleInstance(exam.id, ModuleType.Note)
-  ];
+  const exam = createMatter({
+    title: '六级考试',
+    description: '考试信息和准备事项',
+    enabledModuleTypes: [ModuleType.Deadline, ModuleType.Note],
+    deadlineTimestamp: Date.now() + 30 * 24 * 60 * 60 * 1000
+  }, 1);
 
-  const bookList = createMatter({ title: '书单', description: '想读和已读的书' }, 2);
-  bookList.enabledModules = [
-    createModuleInstance(bookList.id, ModuleType.Checklist),
-    createModuleInstance(bookList.id, ModuleType.Progress)
-  ];
+  const bookList = createMatter({
+    title: '书单',
+    description: '想读和已读的书',
+    enabledModuleTypes: [ModuleType.Checklist]
+  }, 2);
 
   const cluster: Cluster = {
     id: createId('cluster'),
@@ -177,6 +176,7 @@ export function createSeedState(): AppState {
       matterId: bookList.id,
       title: '三体',
       completed: true,
+      entryType: 'text',
       orderIndex: 0,
       createdAt: now,
       updatedAt: now
@@ -186,6 +186,7 @@ export function createSeedState(): AppState {
       matterId: bookList.id,
       title: '活着',
       completed: false,
+      entryType: 'text',
       orderIndex: 1,
       createdAt: now,
       updatedAt: now
@@ -195,6 +196,7 @@ export function createSeedState(): AppState {
       matterId: bookList.id,
       title: '百年孤独',
       completed: false,
+      entryType: 'text',
       orderIndex: 2,
       createdAt: now,
       updatedAt: now
@@ -206,7 +208,9 @@ export function createSeedState(): AppState {
     clusters: [cluster],
     eventRecords: [],
     counterEntries: [],
-    checklistItems
+    checklistItems,
+    singleCardMatterId: fitness.id,
+    summaryCardMatterIds: [fitness.id, exam.id, bookList.id],
+    cardFormIds: []
   };
 }
-

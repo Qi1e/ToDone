@@ -84,6 +84,8 @@ export interface ChecklistItem {
   matterId: string;
   title: string;
   completed: boolean;
+  entryType?: 'text' | 'matter_ref';
+  targetMatterId?: string;
   orderIndex: number;
   createdAt: number;
   updatedAt: number;
@@ -95,12 +97,18 @@ export interface AppState {
   eventRecords: EventRecordEntry[];
   counterEntries: CounterEntry[];
   checklistItems: ChecklistItem[];
+  singleCardMatterId: string;
+  summaryCardMatterIds: string[];
+  cardFormIds: string[];
 }
 
 export interface CreateMatterIntent {
   title: string;
   description?: string;
+  enabledModuleTypes?: ModuleType[];
   deadlineTimestamp?: number;
+  deadlineHasTime?: boolean;
+  deadlineLocation?: string;
   note?: string;
 }
 
@@ -109,4 +117,3 @@ export interface ModuleOption {
   label: string;
   description: string;
 }
-

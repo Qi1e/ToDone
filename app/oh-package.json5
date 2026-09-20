@@ -1,10 +1,13 @@
 {
+  "modelVersion": "5.0.0",
   "name": "todone",
   "version": "1.0.0",
   "description": "ToDone HarmonyOS native app",
   "main": "",
   "author": "",
   "license": "UNLICENSED",
-  "dependencies": {}
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.18"
+  }
 }
-

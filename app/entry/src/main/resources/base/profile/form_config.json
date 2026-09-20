@@ -4,7 +4,7 @@
       "name": "single_matter_card",
       "displayName": "单事项卡片",
       "description": "查看并记录一个事项",
-      "src": "./ets/widget/pages/SingleMatterCard",
+      "src": "./ets/widget/pages/SingleMatterCard.ets",
       "uiSyntax": "arkts",
       "window": {
         "designWidth": 720,
@@ -24,7 +24,7 @@
       "name": "summary_card",
       "displayName": "汇总卡片",
       "description": "查看多个事项的主要信息",
-      "src": "./ets/widget/pages/SummaryCard",
+      "src": "./ets/widget/pages/SummaryCard.ets",
       "uiSyntax": "arkts",
       "window": {
         "designWidth": 720,
@@ -42,4 +42,3 @@
     }
   ]
 }
-

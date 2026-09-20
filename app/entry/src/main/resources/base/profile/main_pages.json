@@ -1,8 +1,8 @@
 {
   "src": [
     "pages/Index",
+    "pages/CreateMatter",
     "pages/MatterDetail",
     "pages/WidgetPreview"
   ]
 }
-

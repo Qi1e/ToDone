@@ -3,8 +3,17 @@ import { Matter } from '../model/Types';
 
 @Component
 export struct SingleMatterCardView {
-  matter: Matter;
+  matter: Matter = {
+    id: '',
+    title: '事项',
+    createdAt: 0,
+    updatedAt: 0,
+    archived: false,
+    orderIndex: 0,
+    enabledModules: []
+  };
   primaryText: string = '';
+  quickActionLabel: string = '打开';
   clusterColor: string = '#D8DEE8';
 
   build() {
@@ -30,7 +39,7 @@ export struct SingleMatterCardView {
         .layoutWeight(1);
       }
 
-      Button('记录')
+      Button(this.quickActionLabel)
         .fontSize(15)
         .fontColor(Color.White)
         .backgroundColor(Colors.primary)
@@ -97,4 +106,3 @@ export struct SummaryCardView {
     });
   }
 }
-

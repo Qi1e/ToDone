@@ -38,7 +38,7 @@ export class MatterStore {
     return MatterStore.instance;
   }
 
-  init(context: common.UIAbilityContext): void {
+  init(context: common.UIAbilityContext | common.FormExtensionContext): void {
     if (this.ready) {
       return;
     }
@@ -65,7 +65,14 @@ export class MatterStore {
       clusters: input.clusters ?? [],
       eventRecords: input.eventRecords ?? [],
       counterEntries: input.counterEntries ?? [],
-      checklistItems: input.checklistItems ?? []
+      checklistItems: input.checklistItems ?? [],
+      singleCardMatterId: input.singleCardMatterId ?? '',
+      summaryCardMatterIds: input.summaryCardMatterIds ?? (input.matters ?? [])
+        .filter((matter: Matter) => !matter.archived)
+        .sort((a: Matter, b: Matter) => a.orderIndex - b.orderIndex)
+        .slice(0, 3)
+        .map((matter: Matter) => matter.id),
+      cardFormIds: input.cardFormIds ?? []
     };
   }
 
@@ -73,8 +80,11 @@ export class MatterStore {
     if (!this.pref) {
       return;
     }
-    this.pref.putSync(STATE_KEY, JSON.stringify(this.state));
-    this.pref.flush();
+    try {
+      this.pref.putSync(STATE_KEY, JSON.stringify(this.state));
+      this.pref.flush();
+    } catch (error) {
+    }
   }
 
   allMatters(): Matter[] {
@@ -127,7 +137,14 @@ export class MatterStore {
     this.state.matters = this.state.matters.filter((matter: Matter) => matter.id !== id);
     this.state.eventRecords = this.state.eventRecords.filter((entry: EventRecordEntry) => entry.matterId !== id);
     this.state.counterEntries = this.state.counterEntries.filter((entry: CounterEntry) => entry.matterId !== id);
-    this.state.checklistItems = this.state.checklistItems.filter((item: ChecklistItem) => item.matterId !== id);
+    this.state.checklistItems = this.state.checklistItems.filter((item: ChecklistItem) => {
+      return item.matterId !== id && item.targetMatterId !== id;
+    });
+    if (this.state.singleCardMatterId === id) {
+      this.state.singleCardMatterId = '';
+    }
+    this.state.summaryCardMatterIds = this.state.summaryCardMatterIds.filter((matterId: string) => matterId !== id);
+    this.removeEmptyClusters();
     this.reindexMatters();
     this.save();
   }
@@ -180,15 +197,25 @@ export class MatterStore {
       return;
     }
 
-    let clusterId = target.clusterId;
+    const now = Date.now();
+    const sourceClusterId = source.clusterId;
+    let clusterId = target.clusterId ?? sourceClusterId;
     if (!clusterId) {
       const cluster = this.createCluster();
       clusterId = cluster.id;
-      target.clusterId = clusterId;
     }
+
+    this.state.matters.forEach((matter: Matter) => {
+      if (sourceClusterId && matter.clusterId === sourceClusterId && sourceClusterId !== clusterId) {
+        matter.clusterId = clusterId;
+        matter.updatedAt = now;
+      }
+    });
     source.clusterId = clusterId;
-    source.updatedAt = Date.now();
-    target.updatedAt = Date.now();
+    target.clusterId = clusterId;
+    source.updatedAt = now;
+    target.updatedAt = now;
+    this.removeEmptyClusters();
     this.save();
   }
 
@@ -245,14 +272,22 @@ export class MatterStore {
 
   toggleModule(matterId: string, type: ModuleType): void {
     const matter = this.findMatter(matterId);
-    if (!matter) {
+    if (!matter || type === ModuleType.Countdown || type === ModuleType.Progress) {
       return;
     }
     const index = matter.enabledModules.findIndex((module: ModuleInstance) => module.moduleType === type);
     if (index >= 0) {
       matter.enabledModules.splice(index, 1);
+      if (type === ModuleType.Deadline) {
+        matter.enabledModules = matter.enabledModules.filter((module: ModuleInstance) => {
+          return module.moduleType !== ModuleType.Countdown;
+        });
+      }
     } else {
       matter.enabledModules.push(createModuleInstance(matterId, type));
+      if (type === ModuleType.Deadline && !this.hasModule(matter, ModuleType.Countdown)) {
+        matter.enabledModules.push(createModuleInstance(matterId, ModuleType.Countdown));
+      }
     }
     matter.updatedAt = Date.now();
     this.save();
@@ -351,6 +386,8 @@ export class MatterStore {
       .reduce((total: number, entry: CounterEntry) => total + entry.value, 0);
   }
 
+  // Retained for compatibility with data created before the progress module was removed.
+
   getProgressPercent(matterId: string): number {
     const fallback: ProgressConfig = {
       mode: 'manual_percent',
@@ -429,6 +466,20 @@ export class MatterStore {
       .sort((a: ChecklistItem, b: ChecklistItem) => a.orderIndex - b.orderIndex);
   }
 
+  listSummaryText(matterId: string): string {
+    const items = this.checklistItemsFor(matterId);
+    const textItems = items.filter((item: ChecklistItem) => item.entryType !== 'matter_ref');
+    const matterItems = items.length - textItems.length;
+    const completed = textItems.filter((item: ChecklistItem) => item.completed).length;
+    if (matterItems === 0) {
+      return `${completed} / ${textItems.length}`;
+    }
+    if (textItems.length === 0) {
+      return `${matterItems} 个事项`;
+    }
+    return `${completed} / ${textItems.length}，${matterItems} 个事项`;
+  }
+
   addChecklistItem(matterId: string, title: string): void {
     if (title.trim().length === 0) {
       return;
@@ -440,11 +491,78 @@ export class MatterStore {
       matterId,
       title: title.trim(),
       completed: false,
+      entryType: 'text',
       orderIndex: items.length,
       createdAt: now,
       updatedAt: now
     });
     this.save();
+  }
+
+  canLinkMatter(ownerMatterId: string, targetMatterId: string): boolean {
+    const owner = this.findMatter(ownerMatterId);
+    const target = this.findMatter(targetMatterId);
+    if (!owner || !target || owner.id === target.id || owner.archived || target.archived || !this.hasModule(owner, ModuleType.Checklist)) {
+      return false;
+    }
+    const ownerIsAlreadyLinked = this.state.checklistItems.some((item: ChecklistItem) => {
+      return item.entryType === 'matter_ref' && item.targetMatterId === ownerMatterId;
+    });
+    if (ownerIsAlreadyLinked) {
+      return false;
+    }
+    if (this.checklistItemsFor(ownerMatterId).some((item: ChecklistItem) => {
+      return item.entryType === 'matter_ref' && item.targetMatterId === targetMatterId;
+    })) {
+      return false;
+    }
+    const alreadyLinked = this.state.checklistItems.some((item: ChecklistItem) => {
+      return item.entryType === 'matter_ref' && item.targetMatterId === targetMatterId;
+    });
+    if (alreadyLinked) {
+      return false;
+    }
+    const targetHasLinkedChildren = this.checklistItemsFor(targetMatterId).some((item: ChecklistItem) => {
+      return item.entryType === 'matter_ref';
+    });
+    return !targetHasLinkedChildren;
+  }
+
+  availableMatterLinks(ownerMatterId: string): Matter[] {
+    return this.activeMatters().filter((matter: Matter) => {
+      return this.canLinkMatter(ownerMatterId, matter.id);
+    });
+  }
+
+  addMatterListEntry(ownerMatterId: string, targetMatterId: string): void {
+    if (!this.canLinkMatter(ownerMatterId, targetMatterId)) {
+      return;
+    }
+    const items = this.checklistItemsFor(ownerMatterId);
+    const target = this.findMatter(targetMatterId);
+    if (!target) {
+      return;
+    }
+    const now = Date.now();
+    this.state.checklistItems.push({
+      id: createId('matter_link'),
+      matterId: ownerMatterId,
+      title: target.title,
+      completed: false,
+      entryType: 'matter_ref',
+      targetMatterId,
+      orderIndex: items.length,
+      createdAt: now,
+      updatedAt: now
+    });
+    this.save();
+  }
+
+  linkedMatterFor(entry: ChecklistItem): Matter | undefined {
+    if (entry.entryType !== 'matter_ref' || !entry.targetMatterId) {
+      return undefined;
+    }
+    return this.findMatter(entry.targetMatterId);
   }
 
   toggleChecklistItem(itemId: string): void {
@@ -473,7 +591,8 @@ export class MatterStore {
   }
 
   checklistProgressText(matterId: string): string {
-    const items = this.checklistItemsFor(matterId);
+    const items = this.checklistItemsFor(matterId)
+      .filter((item: ChecklistItem) => item.entryType !== 'matter_ref');
     if (items.length === 0) {
       return '0 / 0';
     }
@@ -482,13 +601,16 @@ export class MatterStore {
   }
 
   moduleSummary(matter: Matter): string {
-    const parts: string[] = matter.enabledModules.slice(0, 3).map((module: ModuleInstance) => {
+    const visibleModules = matter.enabledModules.filter((module: ModuleInstance) => {
+      return module.moduleType !== ModuleType.Countdown && module.moduleType !== ModuleType.Progress;
+    });
+    const parts: string[] = visibleModules.slice(0, 3).map((module: ModuleInstance) => {
       return moduleLabel(module.moduleType);
     });
-    if (matter.enabledModules.length > 3) {
-      parts.push(`等 ${matter.enabledModules.length} 个模块`);
+    if (visibleModules.length > 3) {
+      parts.push(`等 ${visibleModules.length} 项信息`);
     }
-    return parts.length > 0 ? parts.join(' · ') : '未启用模块';
+    return parts.length > 0 ? parts.join(' · ') : '未启用信息';
   }
 
   cardPrimaryText(matter: Matter): string {
@@ -498,16 +620,108 @@ export class MatterStore {
     if (this.hasModule(matter, ModuleType.Counter)) {
       return `今日 ${this.counterToday(matter.id)}，累计 ${this.counterTotal(matter.id)}`;
     }
-    if (this.hasModule(matter, ModuleType.Progress)) {
-      return `${this.getProgressPercent(matter.id)}%`;
-    }
     if (this.hasModule(matter, ModuleType.Checklist)) {
-      return this.checklistProgressText(matter.id);
+      return this.listSummaryText(matter.id);
     }
     if (this.hasModule(matter, ModuleType.Countdown)) {
       return this.countdownText(matter.id);
     }
     return this.moduleSummary(matter);
+  }
+
+  cardQuickActionType(matter: Matter): string {
+    if (this.hasModule(matter, ModuleType.EventRecord)) {
+      return 'record';
+    }
+    if (this.hasModule(matter, ModuleType.Counter)) {
+      return 'counter:1';
+    }
+    return 'open';
+  }
+
+  cardQuickActionLabel(matter: Matter): string {
+    const action = this.cardQuickActionType(matter);
+    if (action === 'record') {
+      return '记录';
+    }
+    if (action === 'counter:1') {
+      return '+1';
+    }
+    return '打开';
+  }
+
+  selectedSingleCardMatterId(): string {
+    const matter = this.findMatter(this.state.singleCardMatterId);
+    if (matter && !matter.archived) {
+      return matter.id;
+    }
+    const first = this.activeMatters()[0];
+    return first ? first.id : '';
+  }
+
+  selectedSingleCardMatter(): Matter | undefined {
+    return this.findMatter(this.selectedSingleCardMatterId());
+  }
+
+  setSingleCardMatter(id: string): void {
+    const matter = this.findMatter(id);
+    if (!matter || matter.archived) {
+      return;
+    }
+    this.state.singleCardMatterId = id;
+    this.save();
+  }
+
+  selectedSummaryCardMatterIds(): string[] {
+    const activeIds = this.activeMatters().map((matter: Matter) => matter.id);
+    const selected = this.state.summaryCardMatterIds.filter((id: string) => activeIds.includes(id));
+    return selected.slice(0, 3);
+  }
+
+  selectedSummaryCardMatters(): Matter[] {
+    return this.selectedSummaryCardMatterIds()
+      .map((id: string) => this.findMatter(id))
+      .filter((matter: Matter | undefined) => matter !== undefined) as Matter[];
+  }
+
+  isSummaryCardMatterSelected(id: string): boolean {
+    return this.selectedSummaryCardMatterIds().includes(id);
+  }
+
+  toggleSummaryCardMatter(id: string): void {
+    const matter = this.findMatter(id);
+    if (!matter || matter.archived) {
+      return;
+    }
+    const nextIds = this.selectedSummaryCardMatterIds();
+    const index = nextIds.indexOf(id);
+    if (index >= 0) {
+      nextIds.splice(index, 1);
+    } else {
+      if (nextIds.length >= 3) {
+        nextIds.shift();
+      }
+      nextIds.push(id);
+    }
+    this.state.summaryCardMatterIds = nextIds;
+    this.save();
+  }
+
+  rememberCardForm(formId: string): void {
+    if (formId.length === 0 || this.state.cardFormIds.includes(formId)) {
+      return;
+    }
+    this.state.cardFormIds.push(formId);
+    this.save();
+  }
+
+  removeCardForm(formId: string): void {
+    this.state.cardFormIds = this.state.cardFormIds.filter((id: string) => id !== formId);
+    this.save();
+  }
+
+  cardFormIds(): string[] {
+    return this.state.cardFormIds.slice();
   }
 
   resetDemoData(): void {
@@ -519,4 +733,3 @@ export class MatterStore {
     return defaultConfigJson(type);
   }
 }
-

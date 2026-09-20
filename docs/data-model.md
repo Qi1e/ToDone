@@ -1,6 +1,6 @@
 # 数据模型
 
-V1 只保留一个核心对象：事项。
+V1 只保留一个核心对象：事项。短期备忘、日期事项和长期记录都使用同一个模型。
 
 ## Matter / 事项
 
@@ -33,15 +33,35 @@ interface ModuleInstance {
 }
 ```
 
-V1 模块：
+V1 用户可选信息：
 
-- 事件记录
+- 记录
 - 计数
-- 进度
 - 截止日期
-- 倒计时
 - 备注
 - 列表
+
+`Countdown` 可以继续存在于旧数据和内部派生结构中，但不出现在创建选择器或详情页的信息选择器中；它始终由 `Deadline` 计算。
+
+## ChecklistItem / 列表项
+
+```ts
+interface ChecklistItem {
+  id: string
+  matterId: string
+  title: string
+  completed: boolean
+  entryType?: 'text' | 'matter_ref'
+  targetMatterId?: string
+  orderIndex: number
+  createdAt: number
+  updatedAt: number
+}
+```
+
+`entryType: 'text'` 是普通文字项；`entryType: 'matter_ref'` 是对另一个独立事项的引用。引用事项仍可单独编辑、归档、删除，并可出现在首页或桌面卡片中。
+
+V1 只允许一层引用，不建立递归父子树。
 
 ## Cluster / 弱关联簇
 
@@ -71,4 +91,3 @@ interface AppState {
 ```
 
 这样可以先验证产品闭环，避免过早引入复杂数据层。
-

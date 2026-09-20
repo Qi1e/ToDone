@@ -1,13 +1,14 @@
 .hvigor/
 .idea/
+.preview/
 .DS_Store
 *.iml
 *.log
 node_modules/
 oh_modules/
 app/.hvigor/
+app/entry/.preview/
 app/build/
 app/entry/build/
 app/local.properties
 app/signing/
-
