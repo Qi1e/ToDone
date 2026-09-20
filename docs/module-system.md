@@ -1,5 +1,7 @@
 # 信息模块
 
+需求以 [产品规格](../PROJECT_SPEC.md) 为准，下表描述当前 V1 实现范围，不表示实机验收通过。实现参考 [详情页](../app/entry/src/main/ets/pages/MatterDetail.ets) 与 [存储层](../app/entry/src/main/ets/store/MatterStore.ets)，修改行为时同步表格。
+
 信息模块描述事项需要哪些记录能力，不把事项分类成任务、项目或习惯。用户在创建事项的同一页面选择信息类型，已创建事项仍可在详情页修改。
 
 ## V1 模块

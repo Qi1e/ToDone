@@ -1,43 +1,26 @@
 # ToDone
 
-ToDone 是一个 HarmonyOS 原生个人事项系统。它不是待办、日历、项目管理或习惯打卡工具；核心对象只有「事项」，用户先创建事项，再选择要记录的信息，并在后续自然修改和持续记录。
+ToDone 是 HarmonyOS 原生个人事项系统。用户创建事项并选择记录、计数、截止日期、备注或列表等信息；列表支持一层独立事项引用，产品边界与功能范围见 [产品规格](PROJECT_SPEC.md)。
 
-## V1 范围
+当前平台方向：HarmonyOS NEXT 优先；其他 Android 系统仅作为后续可行性评估，不属于本轮兼容承诺。
 
-- 事项创建、编辑、删除、归档
-- 首页事项列表与排序
-- 弱关联簇
-- 创建时选择记录、计数、截止日期、备注、列表等信息
-- 事件记录、计数、截止日期、备注、文字列表
-- 列表中关联独立事项，并在事项详情中查看其状态
-- 基础单事项卡片与基础汇总卡片
-- 本地数据持久化
+## 开发入口
+- 用 DevEco Studio 打开 `app/` 工程；Codex / VS Code 打开仓库根目录。
+- [运行与验证](docs/development.md)：环境、检查脚本和实机验收。
+- [当前任务与验证状态](TODO.md)：最新进度的唯一入口。
+- [AI 工作约定](AGENTS.md)：任务分级、自动维护与完成标准。
 
-## 技术路线
+## 项目资料
+| 资料 | 内容 |
+| --- | --- |
+| [产品规格](PROJECT_SPEC.md) | 需求、边界与长期方向 |
+| [技术决策](DECISIONS.md) | 重要选择、理由和替代关系 |
+| [变更记录](CHANGELOG.md) | 功能变化和修复 |
+| [数据模型](docs/data-model.md) | 实现结构与持久化 |
+| [模块系统](docs/module-system.md) | 模块行为与需求差距 |
+| [设计原则](docs/design-principles.md) | UI 设计导航 |
+| [服务卡片验证](docs/widget-technical-validation.md) | 卡片逐项验收 |
 
-- HarmonyOS Stage 模型
-- ArkTS / ArkUI
-- `preferences` 轻量本地持久化
-- Service Widget / 服务卡片基础结构
-
-## 目录结构
-
-```text
-/
-├─ PROJECT_SPEC.md
-├─ README.md
-├─ CHANGELOG.md
-├─ DECISIONS.md
-├─ TODO.md
-├─ docs/
-└─ app/
-   ├─ AppScope/
-   ├─ entry/
-   ├─ build-profile.json5
-   ├─ hvigorfile.ts
-   └─ oh-package.json5
-```
-
-## 当前验证状态
-
-本仓库已建立 HarmonyOS ArkTS 工程结构和 V1 业务代码。当前机器已通过 DevEco Studio 自带工具完成 `ohpm install`，`@ohos/hypium@1.0.18` 已安装；HarmonyOS 编译、原生 `DatePicker` 和服务卡片行为仍需在 DevEco Studio、模拟器或真机上验证。测试与上架工作不包含在当前实现范围内。
+## 技术与目录
+ArkTS / ArkUI、Stage 模型、preferences 本地存储、服务卡片。
+`app/` 存放应用工程，`docs/` 存放专题说明，`scripts/` 存放无额外 npm 依赖的开发检查入口。

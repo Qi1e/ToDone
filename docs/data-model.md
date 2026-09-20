@@ -1,5 +1,7 @@
 # 数据模型
 
+实现结构以 [Types.ets](../app/entry/src/main/ets/model/Types.ets) 为准，存储行为见 [MatterStore.ets](../app/entry/src/main/ets/store/MatterStore.ets)。本文解释结构；需求中的建议字段不代表全部已实现。代码结构或存储机制改变时同步本文件。
+
 V1 只保留一个核心对象：事项。短期备忘、日期事项和长期记录都使用同一个模型。
 
 ## Matter / 事项

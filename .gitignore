@@ -12,3 +12,10 @@ app/build/
 app/entry/build/
 app/local.properties
 app/signing/
+
+
+# 本机验证命令与工具路径（不含团队通用配置）
+tools.local.json
+
+
+.vscode/
