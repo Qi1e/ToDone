@@ -4,8 +4,8 @@ import { Colors, Radius, Space } from '../common/Theme';
 import { formatDate } from '../common/DateFormat';
 import { MODULE_OPTIONS } from '../model/Defaults';
 import { ModuleOption, ModuleType } from '../model/Types';
-import { MatterStore } from '../store/MatterStore';
-import { refreshKnownCards } from '../widget/CardRefresh';
+import { MatterService } from '../contracts/MatterService';
+import { MatterServices } from '../application/MatterServices';
 
 interface CreateMatterRouteParams {
   ownerMatterId?: string;
@@ -14,7 +14,8 @@ interface CreateMatterRouteParams {
 @Entry
 @Component
 struct CreateMatter {
-  private store: MatterStore = MatterStore.getInstance();
+  private service: MatterService = MatterServices.getService();
+  private pageVisible: boolean = false;
 
   @State titleInput: string = '';
   @State descriptionInput: string = '';
@@ -27,13 +28,20 @@ struct CreateMatter {
   @State deadlineLocationInput: string = '';
   @State feedbackText: string = '';
   @State ownerMatterId: string = '';
+  @State isSaving: boolean = false;
+  @State pendingMatterId: string = '';
 
   aboutToAppear(): void {
+    this.pageVisible = true;
     const context = getContext(this) as common.UIAbilityContext;
-    this.store.init(context);
+    MatterServices.initialize(context);
     const params = router.getParams() as CreateMatterRouteParams | undefined;
     this.ownerMatterId = params?.ownerMatterId ?? '';
     this.deadlineDate = this.dateAtOffset(0);
+  }
+
+  aboutToDisappear(): void {
+    this.pageVisible = false;
   }
 
   private dateAtOffset(offset: number): Date {
@@ -86,11 +94,12 @@ struct CreateMatter {
   }
 
   private ownerTitle(): string {
-    const owner = this.ownerMatterId.length > 0 ? this.store.findMatter(this.ownerMatterId) : undefined;
+    const owner = this.ownerMatterId.length > 0 ? this.service.findMatter(this.ownerMatterId) : undefined;
     return owner ? owner.title : '';
   }
 
-  private createMatter(): void {
+  private async createMatter(): Promise<void> {
+    if (this.isSaving) return;
     const title = this.titleInput.trim();
     if (title.length === 0) {
       this.feedbackText = '请先填写事项名称';
@@ -101,22 +110,34 @@ struct CreateMatter {
       return;
     }
 
-    const matter = this.store.addMatter({
-      title,
-      description: this.descriptionInput,
-      enabledModuleTypes: this.selectedModuleTypes,
-      deadlineTimestamp: this.isSelected(ModuleType.Deadline) ? this.deadlineTimestamp : undefined,
-      deadlineLocation: this.isSelected(ModuleType.Deadline) ? this.deadlineLocationInput : undefined,
-      note: this.isSelected(ModuleType.Note) ? this.noteInput : undefined
-    });
-    if (this.ownerMatterId.length > 0) {
-      this.store.addMatterListEntry(this.ownerMatterId, matter.id);
+    this.isSaving = true;
+    try {
+      const result = this.pendingMatterId.length > 0 ? await this.service.retrySave(this.pendingMatterId) :
+        await this.service.createMatter({
+          intent: {
+            title,
+            description: this.descriptionInput,
+            enabledModuleTypes: this.selectedModuleTypes,
+            deadlineTimestamp: this.isSelected(ModuleType.Deadline) ? this.deadlineTimestamp : undefined,
+            deadlineLocation: this.isSelected(ModuleType.Deadline) ? this.deadlineLocationInput : undefined,
+            note: this.isSelected(ModuleType.Note) ? this.noteInput : undefined
+          },
+          ownerMatterId: this.ownerMatterId,
+          checklistTitles: this.isSelected(ModuleType.Checklist) ? this.initialChecklistItems : []
+        });
+      if (!result.success) {
+        this.pendingMatterId = result.matterId;
+        this.feedbackText = result.message;
+        return;
+      }
+      this.pendingMatterId = result.matterId;
+      MatterServices.requestCardRefresh();
+      if (this.pageVisible) router.back();
+    } catch (error) {
+      this.feedbackText = '创建未完成，请返回首页确认事项状态后重试。';
+    } finally {
+      this.isSaving = false;
     }
-    this.initialChecklistItems.forEach((item: string) => {
-      this.store.addChecklistItem(matter.id, item);
-    });
-    refreshKnownCards(this.store);
-    router.back();
   }
 
   build() {
@@ -124,18 +145,23 @@ struct CreateMatter {
       Scroll() {
         Column({ space: Space.large }) {
           this.TopBar();
-          this.TitlePanel();
-          this.ModulePanel();
-          this.SelectedModuleConfig();
+          Column({ space: Space.large }) {
+            this.TitlePanel();
+            this.ModulePanel();
+            this.SelectedModuleConfig();
+          }
+          .enabled(!this.isSaving && this.pendingMatterId.length === 0);
 
-          Button(this.ownerMatterId.length > 0 ? '创建并加入列表' : '创建事项')
+          Button(this.isSaving ? '正在保存' : (this.pendingMatterId.length > 0 ? '重试保存' :
+            (this.ownerMatterId.length > 0 ? '创建并加入列表' : '创建事项')))
             .width('100%')
             .height(46)
             .fontSize(16)
             .fontColor(Color.White)
             .backgroundColor(Colors.primary)
             .borderRadius(Radius.normal)
-            .onClick(() => this.createMatter());
+            .enabled(!this.isSaving)
+            .onClick(() => { this.createMatter(); });
 
           if (this.feedbackText.length > 0) {
             Text(this.feedbackText)
@@ -159,6 +185,7 @@ struct CreateMatter {
   private TopBar() {
     Row() {
       Button('返回')
+        .enabled(!this.isSaving)
         .fontSize(14)
         .fontColor(Colors.primary)
         .backgroundColor(Colors.primarySoft)

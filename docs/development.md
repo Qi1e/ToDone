@@ -70,3 +70,32 @@ node scripts/verify.mjs --build
 工具或构建方法变更后同步本页及相关脚本；本机路径留在 tools.local.json。普通维护不自动安装插件、升级依赖或修改签名。
 网页讨论形成明确结论后，将结论交给项目 Codex，由其更新当前规格和必要决策。不要复制整段聊天或再建一份平行需求。
 恢复开发先读 TODO，再按任务读取专题。任务完成时同步状态和必要文档；无语义变化的文件保持不动。
+
+## 团队可移植检查与 CI
+
+在保留上述入口的基础上，Node 24+ 可执行：
+```powershell
+node scripts/check-ci.mjs
+```
+
+它调用原文档检查、检查 scripts/ 中 Node 脚本语法，并执行 `tests/matter-service.test.mjs`。不运行 npm install，不修改 SDK 或原 `verify.mjs` 的通过条件。
+
+测试读取白名单中的真实无 SDK 依赖 `.ets` 源码，用 Node 内置的实验性 `stripTypeScriptTypes` 转换到临时目录执行；仅移除已知接口/类型导入，不编译 ArkUI，也不验证 ArkTS 严格模式。Node 小版本升级可能影响该实验性转换入口，变更 Node 时须重新运行检查。
+
+[GitHub Actions](../.github/workflows/ci.yml) 在 PR 和 main 推送上运行同一命令，稳定检查名为 `portable-checks`。状态检查配置见 [协作说明](../CONTRIBUTING.md)。CI 结果不能充当 `assembleHap`、Hypium、preferences 重启持久化或系统卡片验收证据。
+
+## 契约与 Mock 开发
+
+创建页和首页查询通过 [MatterService](../app/entry/src/main/ets/contracts/MatterService.ets) 工作；由 [组装入口](../app/entry/src/main/ets/application/MatterServices.ets) 默认选择真实实现。
+
+本地开发可在首个页面创建前显式调用 `MatterServices.setForPreview(new MockMatterService())`。Mock 保存在独立内存仓库，创建校验与真实服务一致；预览不初始化 preferences、不请求系统卡片刷新。首页尚未迁移的旧交互在预览模式禁用，只供列表查看；完整 UI 编辑只支持已迁移的创建页。提交时不保留调用预览切换的代码。
+
+创建页在保存期间禁用重复提交和输入；保存失败若返回已暂存 ID，则锁定输入并显示“重试保存”。重试不重新创建事项。真实保存完成后才请求卡片刷新并返回，刷新是否成功仍按原设备清单验证。
+
+## 2026-10-18 协作改造验证
+
+- 基线：`3d9bff7`；范围为协作规则、PR / Issue 模板、CI 和创建 / 查询服务切片，原有效测试和检查命令保留。
+- 当前环境 Node 24.14.1，执行 `node scripts/check-ci.mjs`：文档路径检查、脚本语法、8 项可移植业务回归通过。
+- 当前环境缺少 ohpm、Hvigor、hdc 和 tools.local.json，未执行 HAP 构建、Hypium、preferences 重启或设备 UI / 卡片验收。
+- 增加 `app/entry/src/ohosTest/ets/test/List.test.ets` 注册原 MatterStore 套件，原测试文件不改动。目标 DevEco 的测试运行配置和设备执行仍需核实，不猜测本机测试命令。
+- 远程 Actions 状态由 PR 检查显示，不能把本地通过写成远程已通过；main 分支保护需单独配置，未完成项在 TODO 跟踪。
