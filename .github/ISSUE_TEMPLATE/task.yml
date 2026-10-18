@@ -1,0 +1,39 @@
+name: 开发任务
+description: 可独立领取和验收的小任务，不按固定角色分工。
+title: "[任务] "
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标与使用场景
+      description: 说明当前问题与完成后的行为，引用相关规格。
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 修改范围与共享接口
+      description: 写明涉及文件或模块、允许修改的契约，以及范围外事项。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 给出可验证的结果；涉及设备时写明设备与场景。
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: 依赖与阻塞
+      description: 引用前置 Issue、接口 PR 或设计；没有则写“无”。
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: 验证方式与文档影响
+      description: 列出拟运行的检查、设备验收和需要同步的现有文档。
+    validations:
+      required: true

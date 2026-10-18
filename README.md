@@ -9,6 +9,7 @@ ToDone 是 HarmonyOS 原生个人事项系统。用户创建事项并选择记�
 - [运行与验证](docs/development.md)：环境、检查脚本和实机验收。
 - [当前任务与验证状态](TODO.md)：最新进度的唯一入口。
 - [AI 工作约定](AGENTS.md)：任务分级、自动维护与完成标准。
+- [协作开发](CONTRIBUTING.md)：按 Issue 领取任务、共享接口、PR 与 GitHub 合并设置。
 
 ## 项目资料
 | 资料 | 内容 |

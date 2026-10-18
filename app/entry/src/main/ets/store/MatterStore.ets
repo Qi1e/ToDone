@@ -1,5 +1,8 @@
 import { common } from '@kit.AbilityKit';
-import { preferences } from '@kit.ArkData';
+import { MatterRepository } from '../contracts/MatterService';
+import { canLinkMatterInState } from '../domain/MatterLinks';
+import { PreferencesStateStorage } from './PreferencesStateStorage';
+import { StateStorage } from './StateStorage';
 import { daysUntil, isToday } from '../common/DateFormat';
 import {
   CLUSTER_COLORS,
@@ -25,12 +28,9 @@ import {
   ProgressConfig
 } from '../model/Types';
 
-const STORE_NAME = 'todone_store';
-const STATE_KEY = 'app_state_v1';
-
-export class MatterStore {
+export class MatterStore implements MatterRepository {
   private static instance: MatterStore = new MatterStore();
-  private pref?: preferences.Preferences;
+  private storage?: StateStorage;
   private ready: boolean = false;
   private state: AppState = createSeedState();
 
@@ -44,17 +44,19 @@ export class MatterStore {
     }
 
     try {
-      this.pref = preferences.getPreferencesSync(context, { name: STORE_NAME });
-      const raw = this.pref.getSync(STATE_KEY, '') as string;
+      const storage = new PreferencesStateStorage(context);
+      const raw = storage.read();
       if (raw && raw.length > 0) {
         this.state = this.normalizeState(JSON.parse(raw) as AppState);
       } else {
         this.state = createSeedState();
-        this.save();
       }
+      this.storage = storage;
+      if (!raw) this.save();
       this.ready = true;
     } catch (error) {
       this.state = createSeedState();
+      this.storage = undefined;
       this.ready = true;
     }
   }
@@ -77,14 +79,29 @@ export class MatterStore {
   }
 
   private save(): void {
-    if (!this.pref) {
+    if (!this.storage) {
       return;
     }
     try {
-      this.pref.putSync(STATE_KEY, JSON.stringify(this.state));
-      this.pref.flush();
+      this.storage.write(JSON.stringify(this.state)).catch(() => {
+      });
     } catch (error) {
     }
+  }
+
+  readState(): AppState {
+    return JSON.parse(JSON.stringify(this.state)) as AppState;
+  }
+
+  async commitState(state: AppState): Promise<void> {
+    if (!this.storage) {
+      throw new Error('本地存储尚不可用');
+    }
+    const snapshot = JSON.parse(JSON.stringify(state)) as AppState;
+    const pending = this.storage.write(JSON.stringify(snapshot));
+    // 后续旧入口操作可立即看到新事项，避免异步 flush 期间覆盖新状态。
+    this.state = snapshot;
+    await pending;
   }
 
   allMatters(): Matter[] {
@@ -500,32 +517,7 @@ export class MatterStore {
   }
 
   canLinkMatter(ownerMatterId: string, targetMatterId: string): boolean {
-    const owner = this.findMatter(ownerMatterId);
-    const target = this.findMatter(targetMatterId);
-    if (!owner || !target || owner.id === target.id || owner.archived || target.archived || !this.hasModule(owner, ModuleType.Checklist)) {
-      return false;
-    }
-    const ownerIsAlreadyLinked = this.state.checklistItems.some((item: ChecklistItem) => {
-      return item.entryType === 'matter_ref' && item.targetMatterId === ownerMatterId;
-    });
-    if (ownerIsAlreadyLinked) {
-      return false;
-    }
-    if (this.checklistItemsFor(ownerMatterId).some((item: ChecklistItem) => {
-      return item.entryType === 'matter_ref' && item.targetMatterId === targetMatterId;
-    })) {
-      return false;
-    }
-    const alreadyLinked = this.state.checklistItems.some((item: ChecklistItem) => {
-      return item.entryType === 'matter_ref' && item.targetMatterId === targetMatterId;
-    });
-    if (alreadyLinked) {
-      return false;
-    }
-    const targetHasLinkedChildren = this.checklistItemsFor(targetMatterId).some((item: ChecklistItem) => {
-      return item.entryType === 'matter_ref';
-    });
-    return !targetHasLinkedChildren;
+    return canLinkMatterInState(this.state, ownerMatterId, targetMatterId);
   }
 
   availableMatterLinks(ownerMatterId: string): Matter[] {

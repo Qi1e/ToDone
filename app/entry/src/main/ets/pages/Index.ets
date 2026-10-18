@@ -6,7 +6,8 @@ import { Chip } from '../components/Chip';
 import { MODULE_OPTIONS } from '../model/Defaults';
 import { Matter, ModuleInstance, ModuleOption, ModuleType } from '../model/Types';
 import { MatterStore } from '../store/MatterStore';
-import { refreshKnownCards } from '../widget/CardRefresh';
+import { MatterService } from '../contracts/MatterService';
+import { MatterServices } from '../application/MatterServices';
 
 const MATTER_DRAG_TYPE: string = 'ApplicationDefined.ToDoneMatter';
 
@@ -14,6 +15,7 @@ const MATTER_DRAG_TYPE: string = 'ApplicationDefined.ToDoneMatter';
 @Component
 struct Index {
   private store: MatterStore = MatterStore.getInstance();
+  private service: MatterService = MatterServices.getService();
 
   @State searchText: string = '';
   @State showArchived: boolean = false;
@@ -26,9 +28,9 @@ struct Index {
 
   aboutToAppear(): void {
     const context = getContext(this) as common.UIAbilityContext;
-    this.store.init(context);
+    MatterServices.initialize(context);
     this.refresh();
-    refreshKnownCards(this.store);
+    MatterServices.requestCardRefresh();
   }
 
   onPageShow(): void {
@@ -36,7 +38,7 @@ struct Index {
   }
 
   private refresh(): void {
-    this.matters = this.showArchived ? this.store.archivedMatters() : this.store.activeMatters();
+    this.matters = this.showArchived ? this.service.archivedMatters() : this.service.activeMatters();
   }
 
   private visibleMatters(): Matter[] {
@@ -52,7 +54,7 @@ struct Index {
   }
 
   private refreshCards(prefix: string): void {
-    const result = refreshKnownCards(this.store);
+    const result = MatterServices.requestCardRefresh();
     this.feedbackText = `${prefix}。${result.message}`;
   }
 
@@ -100,7 +102,8 @@ struct Index {
         top: Space.large,
         bottom: Space.large
       })
-      .backgroundColor(Colors.page);
+      .backgroundColor(Colors.page)
+      .enabled(!MatterServices.isPreview());
     }
     .title('ToDone')
     .mode(NavigationMode.Stack);

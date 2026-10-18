@@ -93,3 +93,13 @@ interface AppState {
 ```
 
 这样可以先验证产品闭环，避免过早引入复杂数据层。
+
+## 协作开发边界
+
+- [事项服务契约](../app/entry/src/main/ets/contracts/MatterService.ets) 复用 Types.ets，不另建平行模型；定义创建参数、失败结果、查询和保存重试。
+- [创建业务](../app/entry/src/main/ets/domain/DefaultMatterService.ets) 在独立快照中校验并一次提交事项、初始文字项与关联，避免校验失败留下部分数据。
+- [共享引用规则](../app/entry/src/main/ets/domain/MatterLinks.ets) 同时供旧 MatterStore 与新创建服务使用，保持一层独立引用语义。
+- MatterStore 实现仓库接口，并继续服务尚未迁移的旧页面与系统卡片。[preferences 适配器](../app/entry/src/main/ets/store/PreferencesStateStorage.ets) 保留 `todone_store` / `app_state_v1` 与现有 JSON 数据，不做迁移。
+- 现有 AppState 还包含 `singleCardMatterId`、`summaryCardMatterIds`、`cardFormIds`，字段以 Types.ets 为准，新服务整份保留这些字段。
+- `commitState` 先发布内存状态，再等待 flush；失败不承诺回滚。创建结果返回仍存在的事项 ID，重试提交当前快照，避免重复创建；未经 flush 确认不报告保存成功。
+- [内存 Mock](../app/entry/src/main/ets/mocks/MockMatterService.ets) 与真实实现复用相同业务规则，只替换仓库，不接触 SDK、preferences 或卡片。
