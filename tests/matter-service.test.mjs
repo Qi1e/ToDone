@@ -120,3 +120,103 @@ test('Mock 实例互相隔离，复用真实业务规则且不依赖设备', asy
   assert.equal(second.activeMatters().length, 0);
   assert.equal((await first.createMatter(request(' '))).errorCode, 'invalid_title');
 });
+
+test('日期用途兼容旧配置，按本地日历计算，到分钟判断逾期', async () => {
+  const { dateSummary } = bundle.modules['common/DateFormat'];
+  const now = new Date(2026, 10, 12, 10, 0).getTime();
+  const yesterday = new Date(2026, 10, 11, 23, 59).getTime();
+  assert.equal(dateSummary({ mode: 'elapsed', timestamp: yesterday }, now), '已过 1 天');
+  assert.equal(dateSummary({ mode: 'elapsed', timestamp: now }, now), '已过 0 天');
+  assert.equal(dateSummary({ mode: 'countdown', timestamp: yesterday }, now), '已过去 1 天');
+  assert.match(dateSummary({ timestamp: now - 60000, hasTime: true }, now), /09:59 截止 · 已逾期/);
+  assert.match(dateSummary({ timestamp: now - 60000, hasTime: false }, now), /今天截止/);
+  const { service } = fixture();
+  const result = await service.createMatter(request('开始', { deadlineMode: 'elapsed', deadlineTimestamp: 0 }));
+  const saved = service.findMatter(result.matterId).enabledModules.find(m => m.moduleType === ModuleType.Deadline);
+  assert.equal(JSON.parse(saved.configJson).mode, 'elapsed');
+  const future = await service.createMatter(request('未来', { deadlineMode: 'elapsed', deadlineTimestamp: Date.now() + 172800000 }));
+  assert.equal(future.errorCode, 'invalid_deadline');
+});
+
+test('共享表单创建并挂到原列表；重放保存和末项自动加入均不重复', async () => {
+  const { service, repository } = fixture();
+  const owner = await service.createMatter(request('原列表', { enabledModuleTypes: [ModuleType.Checklist] }));
+  const draft = service.loadEditor('');
+  Object.assign(draft, { title: '子事项', types: [ModuleType.Checklist, ModuleType.Counter], pending: '最后一项',
+    initial: '2', step: '0.5', token: 'save-1' });
+  for (let i = 0; i < 2; i++) assert.equal((await service.saveEditor(draft, owner.matterId)).success, true);
+  const state = repository.readState();
+  assert.equal(state.matters.length, 2);
+  assert.deepEqual(state.checklistItems.map(i => i.title), ['最后一项', '子事项']);
+  assert.equal(service.loadEditor(draft.id).step, '0.5');
+});
+
+test('编辑保留计数、记录、列表完成状态和隐藏配置；解除引用不删除目标', async () => {
+  const { service, repository } = fixture();
+  const target = await service.createMatter(request('关联目标'));
+  const draft = service.loadEditor('');
+  Object.assign(draft, { title: '事项', types: [ModuleType.Counter, ModuleType.Checklist, ModuleType.EventRecord],
+    initial: '3', step: '2', recordName: '打卡', items: [
+      { id: 'item', title: '文字' }, { id: 'ref', title: '关联目标', targetId: target.matterId }] });
+  assert.equal((await service.saveEditor(draft, '')).success, true);
+  const edit = service.loadEditor(draft.id);
+  const state = repository.readState();
+  state.checklistItems[0].completed = true;
+  state.counterEntries.push({ id: 'count', matterId: draft.id, value: 5, timestamp: 42 });
+  state.eventRecords.push({ id: 'record', matterId: draft.id, timestamp: 42 });
+  await repository.commitState(state);
+  edit.title = '新名称';
+  edit.types = [ModuleType.Checklist];
+  edit.items = [{ id: 'item', title: '新文字' }];
+  assert.equal((await service.saveEditor(edit, '')).success, true);
+  const saved = repository.readState();
+  assert.equal(saved.checklistItems.length, 1);
+  assert.equal(saved.checklistItems[0].completed, true);
+  assert.deepEqual(saved.counterEntries, state.counterEntries);
+  assert.deepEqual(saved.eventRecords, state.eventRecords);
+  assert.ok(service.findMatter(target.matterId));
+  const restored = service.loadEditor(draft.id);
+  assert.equal(restored.step, '2');
+  assert.equal(restored.recordName, '打卡');
+  restored.types.push(ModuleType.Counter, ModuleType.EventRecord);
+  assert.equal((await service.saveEditor(restored, '')).success, true);
+  assert.equal(service.findMatter(draft.id).disabledModules.length, 0);
+});
+
+test('旧编辑草稿、无效引用或计数均不覆盖原事项', async () => {
+  const { service, repository } = fixture();
+  const { matterId } = await service.createMatter(request('原事项'));
+  const first = service.loadEditor(matterId);
+  const stale = service.loadEditor(matterId);
+  first.title = '新名称';
+  assert.equal((await service.saveEditor(first, '')).success, true);
+  stale.title = '过期名称';
+  const baseline = repository.readState();
+  assert.equal((await service.saveEditor(stale, '')).success, false);
+  const edit = service.loadEditor(matterId);
+  edit.types = [ModuleType.Checklist];
+  edit.items = [{ id: 'bad', targetId: matterId, title: '引用自身' }];
+  assert.equal((await service.saveEditor(edit, '')).success, false);
+  edit.types = [ModuleType.Counter];
+  edit.step = '0';
+  assert.equal((await service.saveEditor(edit, '')).success, false);
+  assert.deepEqual(repository.readState(), baseline);
+});
+
+test('共享表单 flush 失败后用恢复的草稿重试', async () => {
+  class FailOnce extends MemoryMatterRepository {
+    fail = true;
+    async commitState(state) {
+      await super.commitState(state);
+      if (this.fail) { this.fail = false; throw new Error('flush'); }
+    }
+  }
+  const service = new DefaultMatterService(new FailOnce(emptyState()));
+  const draft = service.loadEditor('');
+  Object.assign(draft, { title: '重试', types: [ModuleType.Checklist], pending: '文字', token: 'stable' });
+  const savedDraft = JSON.stringify(draft);
+  assert.equal((await service.saveEditor(draft, '')).success, false);
+  assert.equal((await service.saveEditor(JSON.parse(savedDraft), '')).success, true);
+  assert.equal(service.activeMatters().length, 1);
+  assert.equal(service.loadEditor(draft.id).items.length, 1);
+});

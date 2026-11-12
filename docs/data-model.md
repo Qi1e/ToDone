@@ -103,3 +103,9 @@ interface AppState {
 - 现有 AppState 还包含 `singleCardMatterId`、`summaryCardMatterIds`、`cardFormIds`，字段以 Types.ets 为准，新服务整份保留这些字段。
 - `commitState` 先发布内存状态，再等待 flush；失败不承诺回滚。创建结果返回仍存在的事项 ID，重试提交当前快照，避免重复创建；未经 flush 确认不报告保存成功。
 - [内存 Mock](../app/entry/src/main/ets/mocks/MockMatterService.ets) 与真实实现复用相同业务规则，只替换仓库，不接触 SDK、preferences 或卡片。
+
+## 创建与编辑
+
+草稿按新建、来源列表 ID 或编辑事项 ID 存入独立 preferences。确认后由 MatterService 校验并一次提交事项与引用。保存标识随事项持久化，恢复未确认的提交后可以重试。编辑快照包含表单配置和列表内容，用于识别过期草稿；计数流水、记录和勾选状态保留当前值。
+
+disabledModules 保存关闭的模块配置。日期用途缺省为截止时间；计数初始值缺省为零，累计值为初始值加流水之和。编辑原有配置沿用模块与列表项 ID。

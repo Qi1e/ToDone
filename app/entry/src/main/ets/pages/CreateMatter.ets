@@ -1,13 +1,17 @@
 import { common } from '@kit.AbilityKit';
-import { router } from '@kit.ArkUI';
-import { Colors, Radius, Space } from '../common/Theme';
-import { formatDate } from '../common/DateFormat';
-import { MODULE_OPTIONS } from '../model/Defaults';
-import { ModuleOption, ModuleType } from '../model/Types';
+import { EditorDraftStorage } from '../store/EditorDraftStorage';
 import { MatterService } from '../contracts/MatterService';
+import { router } from '@kit.ArkUI';
 import { MatterServices } from '../application/MatterServices';
+import { MatterDateEditor } from '../components/MatterDateEditor';
+import { dateSummary } from '../common/DateFormat';
+import { Colors, Radius, Space } from '../common/Theme';
+import { EditorDraft, EditorItem, invalidEditorField } from '../domain/MatterEditor';
+import { createId, MODULE_OPTIONS, moduleLabel } from '../model/Defaults';
+import { DateMode, Matter, ModuleOption, ModuleType } from '../model/Types';
 
-interface CreateMatterRouteParams {
+interface EditorRoute {
+  matterId?: string;
   ownerMatterId?: string;
 }
 
@@ -15,418 +19,313 @@ interface CreateMatterRouteParams {
 @Component
 struct CreateMatter {
   private service: MatterService = MatterServices.getService();
-  private pageVisible: boolean = false;
-
-  @State titleInput: string = '';
-  @State descriptionInput: string = '';
-  @State selectedModuleTypes: ModuleType[] = [];
-  @State noteInput: string = '';
-  @State checklistInput: string = '';
-  @State initialChecklistItems: string[] = [];
-  @State deadlineDate: Date = new Date();
-  @State deadlineTimestamp: number = 0;
-  @State deadlineLocationInput: string = '';
-  @State feedbackText: string = '';
-  @State ownerMatterId: string = '';
-  @State isSaving: boolean = false;
-  @State pendingMatterId: string = '';
+  private scroller: Scroller = new Scroller();
+  private storage?: EditorDraftStorage;
+  private key: string = '';
+  private ownerId: string = '';
+  private ready: boolean = false;
+  private timer: number = -1;
+  private original: string = '';
+  @State compactWidth: boolean = false;
+  @State draft: EditorDraft = new EditorDraft();
+  @State @Watch('dateChanged') date: Date = new Date();
+  @State @Watch('dateChanged') mode: DateMode = 'deadline';
+  @State @Watch('dateChanged') hasTime: boolean = false;
+  @State expanded: string = '';
+  @State invalid: string = '';
+  @State feedback: string = '';
+  @State busy: boolean = false;
+  @State unavailable: boolean = false;
+  @State picking: boolean = false;
+  @State candidates: Matter[] = [];
 
   aboutToAppear(): void {
-    this.pageVisible = true;
     const context = getContext(this) as common.UIAbilityContext;
     MatterServices.initialize(context);
-    const params = router.getParams() as CreateMatterRouteParams | undefined;
-    this.ownerMatterId = params?.ownerMatterId ?? '';
-    this.deadlineDate = this.dateAtOffset(0);
-  }
-
-  aboutToDisappear(): void {
-    this.pageVisible = false;
-  }
-
-  private dateAtOffset(offset: number): Date {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() + offset);
-    return date;
-  }
-
-  private weekendDate(): Date {
-    const date = this.dateAtOffset(0);
-    const day = date.getDay();
-    const offset = day === 0 ? 0 : 6 - day;
-    date.setDate(date.getDate() + offset);
-    return date;
-  }
-
-  private nextWeekDate(): Date {
-    const date = this.dateAtOffset(0);
-    const daysToMonday = ((8 - date.getDay()) % 7) || 7;
-    date.setDate(date.getDate() + daysToMonday);
-    return date;
-  }
-
-  private setDeadlineDate(date: Date): void {
-    this.deadlineDate = new Date(date.getTime());
-    this.deadlineTimestamp = this.deadlineDate.getTime();
-  }
-
-  private dateFromPickerResult(value: DatePickerResult): Date {
-    const year = value.year ?? this.deadlineDate.getFullYear();
-    const month = value.month ?? this.deadlineDate.getMonth();
-    const day = value.day ?? this.deadlineDate.getDate();
-    return new Date(year, month, day);
-  }
-
-  private isSelected(type: ModuleType): boolean {
-    return this.selectedModuleTypes.includes(type);
-  }
-
-  private toggleModule(type: ModuleType): void {
-    if (this.isSelected(type)) {
-      this.selectedModuleTypes = this.selectedModuleTypes.filter((item: ModuleType) => item !== type);
+    const route = router.getParams() as EditorRoute | undefined;
+    const id = route?.matterId ?? '';
+    this.ownerId = route?.ownerMatterId ?? '';
+    this.key = id ? 'edit_' + id : this.ownerId ? 'owner_' + this.ownerId : 'new';
+    const initial = this.service.loadEditor(id);
+    if (!initial) {
+      this.unavailable = true;
+      this.feedback = '原事项已删除';
       return;
     }
-    this.selectedModuleTypes = [...this.selectedModuleTypes, type];
-    if (type === ModuleType.Deadline && this.deadlineTimestamp === 0) {
-      this.setDeadlineDate(this.dateAtOffset(0));
-    }
-  }
-
-  private ownerTitle(): string {
-    const owner = this.ownerMatterId.length > 0 ? this.service.findMatter(this.ownerMatterId) : undefined;
-    return owner ? owner.title : '';
-  }
-
-  private async createMatter(): Promise<void> {
-    if (this.isSaving) return;
-    const title = this.titleInput.trim();
-    if (title.length === 0) {
-      this.feedbackText = '请先填写事项名称';
-      return;
-    }
-    if (this.isSelected(ModuleType.Deadline) && this.deadlineTimestamp === 0) {
-      this.feedbackText = '请先选择截止日期';
-      return;
-    }
-
-    this.isSaving = true;
+    this.original = JSON.stringify(initial);
+    this.draft = initial;
     try {
-      const result = this.pendingMatterId.length > 0 ? await this.service.retrySave(this.pendingMatterId) :
-        await this.service.createMatter({
-          intent: {
-            title,
-            description: this.descriptionInput,
-            enabledModuleTypes: this.selectedModuleTypes,
-            deadlineTimestamp: this.isSelected(ModuleType.Deadline) ? this.deadlineTimestamp : undefined,
-            deadlineLocation: this.isSelected(ModuleType.Deadline) ? this.deadlineLocationInput : undefined,
-            note: this.isSelected(ModuleType.Note) ? this.noteInput : undefined
-          },
-          ownerMatterId: this.ownerMatterId,
-          checklistTitles: this.isSelected(ModuleType.Checklist) ? this.initialChecklistItems : []
-        });
-      if (!result.success) {
-        this.pendingMatterId = result.matterId;
-        this.feedbackText = result.message;
+      if (!MatterServices.isPreview()) {
+        this.storage = new EditorDraftStorage(context, this.key);
+        const saved = this.storage.read();
+        if (saved) this.draft = JSON.parse(saved) as EditorDraft;
+      }
+    } catch (error) { this.feedback = '无法读取草稿'; }
+    this.date = new Date(this.draft.timestamp);
+    this.mode = this.draft.mode;
+    this.hasTime = this.draft.hasTime;
+    this.ready = true;
+  }
+
+  private dateChanged(): void {
+    if (!this.ready) return;
+    this.draft.timestamp = this.date.getTime();
+    this.draft.mode = this.mode;
+    this.draft.hasTime = this.hasTime;
+    this.changed();
+  }
+
+  private changed(): void {
+    this.invalid = '';
+    this.feedback = '';
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => { this.writeDraft(); }, 180);
+  }
+
+  private async writeDraft(): Promise<boolean> {
+    clearTimeout(this.timer);
+    try {
+      if (!this.storage && !MatterServices.isPreview()) throw new Error('storage');
+      await this.storage?.write(JSON.stringify(this.draft));
+      return true;
+    } catch (error) {
+      this.feedback = '草稿写入失败，请重试';
+      return false;
+    }
+  }
+
+  private async leave(discard: boolean): Promise<void> {
+    clearTimeout(this.timer);
+    if (discard) {
+      try {
+        await this.storage?.write('');
+      } catch (error) {
+        this.feedback = '清除草稿失败，请重试';
         return;
       }
-      this.pendingMatterId = result.matterId;
-      MatterServices.requestCardRefresh();
-      if (this.pageVisible) router.back();
-    } catch (error) {
-      this.feedbackText = '创建未完成，请返回首页确认事项状态后重试。';
-    } finally {
-      this.isSaving = false;
+    } else if (!await this.writeDraft()) return;
+    this.ready = false;
+    router.back();
+  }
+
+  onPageHide(): void {
+    if (this.ready && this.original !== JSON.stringify(this.draft)) this.writeDraft();
+  }
+
+  onBackPress(): boolean {
+    if (this.busy) return true;
+    if (this.unavailable || this.original === JSON.stringify(this.draft)) return false;
+    AlertDialog.show({
+      message: '退出编辑？',
+      buttons: [
+        { value: '关闭', action: () => {} },
+        { value: '保留草稿', action: () => { this.leave(false); } },
+        { value: '放弃', action: () => { this.leave(true); } }
+      ]
+    });
+    return true;
+  }
+
+  private activate(type: ModuleType): void {
+    if (!this.draft.types.includes(type)) {
+      this.draft.types = this.draft.types.concat(type);
+      this.changed();
     }
+    this.expanded = this.expanded === type ? '' : type;
+    this.picking = false;
+    const index = this.draft.types.indexOf(type) + 1;
+    setTimeout(() => this.scroller.scrollToIndex(index, false, ScrollAlign.START), 0);
+  }
+
+  private disable(type: ModuleType): void {
+    this.draft.types = this.draft.types.filter((item: ModuleType) => item !== type);
+    if (this.expanded === type) this.expanded = '';
+    this.changed();
+  }
+
+  private async save(): Promise<void> {
+    if (this.busy) return;
+    this.invalid = invalidEditorField(this.draft);
+    if (this.invalid) {
+      if (this.invalid === 'title') this.feedback = '请填写事项名称';
+      if (this.invalid === ModuleType.Deadline) this.feedback = '正数日的起始日期不能晚于今天';
+      if (this.invalid === ModuleType.Note) this.feedback = '请填写备注内容';
+      if (this.invalid === ModuleType.Counter) this.feedback = '初始数值须非负，每次增加须大于零';
+      if (this.invalid === ModuleType.Checklist) this.feedback = '请填写或移除空列表项';
+      if (this.invalid !== 'title') this.expanded = this.invalid;
+      const index = this.draft.types.findIndex((type: ModuleType) => type === this.invalid) + 1;
+      setTimeout(() => this.scroller.scrollToIndex(index, false, ScrollAlign.START), 0);
+      return;
+    }
+    this.busy = true;
+    try {
+      if (!this.draft.token) this.draft.token = createId('save');
+      if (!await this.writeDraft()) {
+        this.draft.token = '';
+        return;
+      }
+      const result = await this.service.saveEditor(this.draft, this.ownerId);
+      if (!result.success) {
+        if (!result.matterId) {
+          this.draft.token = '';
+          await this.writeDraft();
+        }
+        this.feedback = result.message;
+        return;
+      }
+      MatterServices.requestCardRefresh();
+      await this.leave(true);
+    } catch (error) { this.feedback = '保存未完成，请重试'; }
+    finally { this.busy = false; }
+  }
+
+  private moduleTitle(type: ModuleType): string {
+    let name = '';
+    if (type === ModuleType.Deadline) name = this.draft.dateName;
+    if (type === ModuleType.Counter) name = this.draft.counterName;
+    if (type === ModuleType.EventRecord) name = this.draft.recordName;
+    return name ? moduleLabel(type) + ' · ' + name : moduleLabel(type);
+  }
+
+  private summary(type: ModuleType): string {
+    if (type === ModuleType.Deadline) return dateSummary({ timestamp: this.draft.timestamp, mode: this.mode, hasTime: this.hasTime });
+    if (type === ModuleType.Counter) return `${this.draft.initial} · 每次增加 ${this.draft.step}`;
+    if (type === ModuleType.Checklist) return this.draft.items.length ?
+      `共 ${this.draft.items.length} 项 · ${this.draft.items.slice(0, 3).map((i: EditorItem) =>
+        (i.targetId ? '事项：' : '文字：') + i.title).join('、')}` : '';
+    if (type === ModuleType.EventRecord) return this.draft.recordName;
+    return this.draft.note;
   }
 
   build() {
-    Navigation() {
-      Scroll() {
-        Column({ space: Space.large }) {
-          this.TopBar();
-          Column({ space: Space.large }) {
-            this.TitlePanel();
-            this.ModulePanel();
-            this.SelectedModuleConfig();
-          }
-          .enabled(!this.isSaving && this.pendingMatterId.length === 0);
-
-          Button(this.isSaving ? '正在保存' : (this.pendingMatterId.length > 0 ? '重试保存' :
-            (this.ownerMatterId.length > 0 ? '创建并加入列表' : '创建事项')))
-            .width('100%')
-            .height(46)
-            .fontSize(16)
-            .fontColor(Color.White)
-            .backgroundColor(Colors.primary)
-            .borderRadius(Radius.normal)
-            .enabled(!this.isSaving)
-            .onClick(() => { this.createMatter(); });
-
-          if (this.feedbackText.length > 0) {
-            Text(this.feedbackText)
-              .fontSize(13)
-              .fontColor(Colors.danger)
-              .width('100%');
-          }
-        }
-        .width('100%')
-        .padding(Space.large);
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor(Colors.page);
-    }
-    .title(this.ownerMatterId.length > 0 ? '添加列表事项' : '新建事项')
-    .mode(NavigationMode.Stack);
-  }
-
-  @Builder
-  private TopBar() {
-    Row() {
-      Button('返回')
-        .enabled(!this.isSaving)
-        .fontSize(14)
-        .fontColor(Colors.primary)
-        .backgroundColor(Colors.primarySoft)
-        .borderRadius(Radius.normal)
-        .onClick(() => router.back());
-      Text(this.ownerMatterId.length > 0 ? '添加列表事项' : '新建事项')
-        .fontSize(24)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text)
-        .margin({ left: Space.normal });
-    }
-    .width('100%');
-  }
-
-  @Builder
-  private TitlePanel() {
-    Column({ space: Space.normal }) {
-      if (this.ownerMatterId.length > 0 && this.ownerTitle().length > 0) {
-        Text(`添加到「${this.ownerTitle()}」`)
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Colors.text);
-      }
-
-      TextInput({ placeholder: '事项名称', text: this.titleInput })
-        .height(46)
-        .fontSize(17)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .onChange((value: string) => {
-          this.titleInput = value;
-        });
-
-      TextInput({ placeholder: '说明（可选）', text: this.descriptionInput })
-        .height(44)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .onChange((value: string) => {
-          this.descriptionInput = value;
-        });
-    }
-    .padding(Space.large)
-    .backgroundColor(Colors.surface)
-    .borderRadius(Radius.large)
-    .border({ width: 1, color: Colors.border });
-  }
-
-  @Builder
-  private ModulePanel() {
-    Column({ space: Space.normal }) {
-      Text('添加信息')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text);
-
-      Flex({ wrap: FlexWrap.Wrap }) {
-        ForEach(MODULE_OPTIONS, (option: ModuleOption) => {
-          Button(option.label)
-            .fontSize(14)
-            .fontColor(this.isSelected(option.type) ? Color.White : Colors.primary)
-            .backgroundColor(this.isSelected(option.type) ? Colors.primary : Colors.primarySoft)
-            .borderRadius(Radius.normal)
-            .margin({ right: Space.small, bottom: Space.small })
-            .onClick(() => this.toggleModule(option.type));
-        }, (option: ModuleOption) => option.type);
-      }
-    }
-    .padding(Space.large)
-    .backgroundColor(Colors.surface)
-    .borderRadius(Radius.large)
-    .border({ width: 1, color: Colors.border });
-  }
-
-  @Builder
-  private SelectedModuleConfig() {
-    if (this.isSelected(ModuleType.Deadline)) {
-      this.DeadlineConfigPanel();
-    }
-    if (this.isSelected(ModuleType.Note)) {
-      this.NoteConfigPanel();
-    }
-    if (this.isSelected(ModuleType.Counter)) {
-      this.CounterConfigPanel();
-    }
-    if (this.isSelected(ModuleType.Checklist)) {
-      this.ChecklistConfigPanel();
-    }
-  }
-
-  @Builder
-  private DeadlineConfigPanel() {
-    Column({ space: Space.normal }) {
-      Text('截止日期')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text);
-
-      Row({ space: Space.small }) {
-        Button('今天')
-          .fontSize(13)
-          .fontColor(Colors.primary)
-          .backgroundColor(Colors.primarySoft)
-          .borderRadius(Radius.normal)
-          .onClick(() => this.setDeadlineDate(this.dateAtOffset(0)));
-        Button('明天')
-          .fontSize(13)
-          .fontColor(Colors.primary)
-          .backgroundColor(Colors.primarySoft)
-          .borderRadius(Radius.normal)
-          .onClick(() => this.setDeadlineDate(this.dateAtOffset(1)));
-        Button('本周末')
-          .fontSize(13)
-          .fontColor(Colors.primary)
-          .backgroundColor(Colors.primarySoft)
-          .borderRadius(Radius.normal)
-          .onClick(() => this.setDeadlineDate(this.weekendDate()));
-        Button('下周')
-          .fontSize(13)
-          .fontColor(Colors.primary)
-          .backgroundColor(Colors.primarySoft)
-          .borderRadius(Radius.normal)
-          .onClick(() => this.setDeadlineDate(this.nextWeekDate()));
-      }
-
-      Text(`已选：${this.deadlineTimestamp === 0 ? '未选择' : formatDate(this.deadlineTimestamp)}`)
-        .fontSize(15)
-        .fontColor(this.deadlineTimestamp === 0 ? Colors.warning : Colors.text);
-
-      DatePicker({
-        start: new Date('2020-01-01T00:00:00'),
-        end: new Date('2100-12-31T00:00:00'),
-        selected: this.deadlineDate
-      })
-        .width('100%')
-        .onChange((value: DatePickerResult) => this.setDeadlineDate(this.dateFromPickerResult(value)));
-
-      TextInput({ placeholder: '地点，可不填', text: this.deadlineLocationInput })
-        .height(42)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .onChange((value: string) => {
-          this.deadlineLocationInput = value;
-        });
-    }
-    .padding(Space.large)
-    .backgroundColor(Colors.surface)
-    .borderRadius(Radius.large)
-    .border({ width: 1, color: Colors.border });
-  }
-
-  @Builder
-  private NoteConfigPanel() {
-    Column({ space: Space.normal }) {
-      Text('备注')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text);
-      TextArea({ placeholder: '备注（可选）', text: this.noteInput })
-        .height(120)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .onChange((value: string) => {
-          this.noteInput = value;
-        });
-    }
-    .padding(Space.large)
-    .backgroundColor(Colors.surface)
-    .borderRadius(Radius.large)
-    .border({ width: 1, color: Colors.border });
-  }
-
-  @Builder
-  private CounterConfigPanel() {
     Column({ space: Space.small }) {
-      Text('计数')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text);
-    }
-    .padding(Space.large)
-    .backgroundColor(Colors.surface)
-    .borderRadius(Radius.large)
-    .border({ width: 1, color: Colors.border });
-  }
-
-  @Builder
-  private ChecklistConfigPanel() {
-    Column({ space: Space.small }) {
-      Text('列表')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text);
-
-      Row({ space: Space.small }) {
-        TextInput({ placeholder: '列表项', text: this.checklistInput })
-          .height(42)
-          .fontSize(15)
-          .backgroundColor(Colors.surfaceSoft)
-          .borderRadius(Radius.normal)
-          .layoutWeight(1)
-          .onChange((value: string) => {
-            this.checklistInput = value;
-          });
-        Button('添加')
-          .fontSize(14)
-          .fontColor(Color.White)
-          .backgroundColor(Colors.primary)
-          .borderRadius(Radius.normal)
-          .onClick(() => {
-            const item = this.checklistInput.trim();
-            if (item.length > 0) {
-              this.initialChecklistItems = [...this.initialChecklistItems, item];
-              this.checklistInput = '';
+      Row({ space: Space.normal }) {
+        Button('返回').onClick(() => { if (!this.onBackPress()) router.back(); })
+        Text(this.draft.editing ? '编辑事项' : this.ownerId ? '创建并加入列表' : '创建事项').fontSize(22)
+      }.width('100%')
+      if (!this.unavailable) {
+        List({ scroller: this.scroller, space: Space.normal }) {
+          ListItem() {
+            Column({ space: Space.small }) {
+              Text('事项名称')
+              TextInput({ text: this.draft.title }).onChange((v: string) => { this.draft.title = v; this.changed(); })
+                .border({ width: 1, color: this.invalid === 'title' ? Colors.danger : Colors.border })
+              Text('说明（可选）')
+              TextInput({ text: this.draft.description }).onChange((v: string) => { this.draft.description = v; this.changed(); })
+            }.alignItems(HorizontalAlign.Start)
+          }
+          ForEach(this.draft.types, (type: ModuleType) => {
+            ListItem() {
+              Column({ space: Space.small }) {
+                Row({ space: Space.small }) {
+                  Button(this.moduleTitle(type)).onClick(() => this.activate(type))
+                  Blank()
+                  Button('关闭模块').onClick(() => this.disable(type))
+                }.width('100%')
+                if (this.expanded === type) {
+                  this.config(type)
+                } else if (this.summary(type)) {
+                  Text(this.summary(type)).maxLines(2)
+                }
+              }.padding(Space.normal).width('100%').backgroundColor(Colors.surface)
+                .borderRadius(Radius.normal).border({ width: 1, color: this.invalid === type ? Colors.danger : Colors.border })
             }
-          });
+          }, (type: ModuleType) => type)
+          ListItem() {
+            Flex({ wrap: FlexWrap.Wrap }) {
+              ForEach(MODULE_OPTIONS.filter((o: ModuleOption) => !this.draft.types.includes(o.type)), (o: ModuleOption) => {
+                Column() {
+                  Text(o.label).fontSize(16)
+                  Text(o.description).fontSize(13).fontColor(Colors.subText)
+                }.width(this.compactWidth ? '100%' : '48%').padding(Space.small)
+                  .onClick(() => this.activate(o.type))
+              }, (o: ModuleOption) => o.type)
+            }.width('100%').backgroundColor(Colors.surfaceSoft)
+              .onAreaChange((oldArea: Area, area: Area) => {
+                const scale = getContext(this).config.fontSizeScale ?? 1;
+                this.compactWidth = Number(area.width) < 300 || scale >= 1.5;
+              })
+          }
+        }.layoutWeight(1).enabled(!this.busy && !this.draft.token)
+        Button(this.busy ? '正在保存' : this.draft.token ? '重试保存' : this.draft.editing ? '保存修改' : '创建事项')
+          .width('100%').enabled(!this.busy).onClick(() => { this.save(); })
       }
+      if (this.feedback) { Text(this.feedback).fontColor(Colors.danger) }
+    }.width('100%').height('100%').padding(Space.normal).backgroundColor(Colors.page)
+  }
 
-      ForEach(this.initialChecklistItems, (item: string, index: number) => {
-        Row() {
-          Text(item)
-            .fontSize(14)
-            .fontColor(Colors.text)
-            .layoutWeight(1);
-          Button('删除')
-            .fontSize(12)
-            .fontColor(Colors.danger)
-            .backgroundColor('#FFE7ED')
-            .borderRadius(Radius.small)
-            .onClick(() => {
-              this.initialChecklistItems = this.initialChecklistItems.filter((_, itemIndex: number) => itemIndex !== index);
-            });
-        }
-        .width('100%');
-      });
+  @Builder
+  private config(type: ModuleType) {
+    if (type === ModuleType.Deadline) {
+      Text('日期名称（可选）')
+      TextInput({ text: this.draft.dateName }).maxLength(30)
+        .onChange((v: string) => { this.draft.dateName = v; this.changed(); })
+      MatterDateEditor({ date: $date, mode: $mode, hasTime: $hasTime })
+      Text('地点（可选）')
+      TextInput({ text: this.draft.location }).onChange((v: string) => { this.draft.location = v; this.changed(); })
+    } else if (type === ModuleType.Counter) {
+      Text('计数名称（可选）')
+      TextInput({ text: this.draft.counterName }).maxLength(30)
+        .onChange((v: string) => { this.draft.counterName = v; this.changed(); })
+      Text('初始数值')
+      TextInput({ text: this.draft.initial }).type(InputType.NUMBER_DECIMAL)
+        .onChange((v: string) => { this.draft.initial = v; this.changed(); })
+      Text('每次增加')
+      TextInput({ text: this.draft.step }).type(InputType.NUMBER_DECIMAL)
+        .onChange((v: string) => { this.draft.step = v; this.changed(); })
+    } else if (type === ModuleType.Note) {
+      TextArea({ text: this.draft.note }).onChange((v: string) => { this.draft.note = v; this.changed(); })
+    } else if (type === ModuleType.EventRecord) {
+      Text('记录名称（可选）')
+      TextInput({ text: this.draft.recordName }).onChange((v: string) => { this.draft.recordName = v; this.changed(); })
+    } else if (type === ModuleType.Checklist) {
+      this.listEditor()
     }
-    .padding(Space.large)
-    .backgroundColor(Colors.surface)
-    .borderRadius(Radius.large)
-    .border({ width: 1, color: Colors.border });
+  }
+
+  @Builder
+  private listEditor() {
+    ForEach(this.draft.items, (item: EditorItem) => {
+      Row() {
+        if (item.targetId) {
+          Text(`事项 · ${this.service.findMatter(item.targetId)?.title ?? item.title}`).layoutWeight(1)
+        } else {
+          TextInput({ text: item.title }).layoutWeight(1).onChange((v: string) => {
+            item.title = v;
+            this.changed();
+          })
+        }
+        Button('移除').onClick(() => {
+          this.draft.items = this.draft.items.filter((i: EditorItem) => i.id !== item.id);
+          this.changed();
+        })
+      }
+    }, (i: EditorItem) => i.id)
+    Row() {
+      TextInput({ text: this.draft.pending }).layoutWeight(1)
+        .onChange((v: string) => { this.draft.pending = v; this.changed(); })
+      Button('添加文字').onClick(() => {
+        if (this.draft.pending.trim()) {
+          this.draft.items = this.draft.items.concat({ id: createId('check'), title: this.draft.pending.trim() });
+          this.draft.pending = '';
+          this.changed();
+        }
+      })
+    }
+    Button('关联事项').onClick(() => {
+      this.picking = !this.picking;
+      this.candidates = this.service.linkCandidates(this.draft, this.ownerId);
+
+    })
+    if (this.picking) {
+      if (!this.candidates.length) { Text('暂无可关联事项') }
+      ForEach(this.candidates, (m: Matter) => {
+        Button(m.title).onClick(() => {
+          this.draft.items = this.draft.items.concat({ id: createId('link'), title: m.title, targetId: m.id });
+          this.picking = false;
+          this.changed();
+        })
+      }, (m: Matter) => m.id)
+    }
   }
 }

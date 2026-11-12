@@ -25,3 +25,7 @@ ToDone 是 HarmonyOS 原生个人事项系统。用户创建事项并选择记�
 ## 技术与目录
 ArkTS / ArkUI、Stage 模型、preferences 本地存储、服务卡片。
 `app/` 存放应用工程，`docs/` 存放专题说明，`scripts/` 存放无额外 npm 依赖的开发检查入口。
+
+## 本地创建流程 Demo
+
+独立网页交互原型见 [Demo 说明](demo/web/README.md)。在仓库根目录运行 `node demo/web/server.mjs`，用浏览器打开本机 4173 端口即可试用；不需要模拟器，不访问正式数据。本轮仅本地开发。

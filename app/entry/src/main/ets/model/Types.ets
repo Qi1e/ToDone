@@ -9,6 +9,7 @@ export enum ModuleType {
 }
 
 export interface Matter {
+  lastEditorToken?: string;
   id: string;
   title: string;
   description?: string;
@@ -17,10 +18,12 @@ export interface Matter {
   archived: boolean;
   orderIndex: number;
   clusterId?: string;
+  disabledModules?: ModuleInstance[];
   enabledModules: ModuleInstance[];
 }
 
 export interface ModuleInstance {
+  name?: string;
   id: string;
   matterId: string;
   moduleType: ModuleType;
@@ -48,6 +51,7 @@ export type CounterMode = 'fixed' | 'variable' | 'daily_once';
 export interface CounterConfig {
   mode: CounterMode;
   unit?: string;
+  initialValue?: number;
   fixedSteps?: number[];
 }
 
@@ -69,7 +73,10 @@ export interface ProgressConfig {
   linkedCounterModuleId?: string;
 }
 
+export type DateMode = 'deadline' | 'countdown' | 'elapsed';
+
 export interface DeadlineConfig {
+  mode?: DateMode;
   timestamp: number;
   hasTime: boolean;
   location?: string;
@@ -107,6 +114,7 @@ export interface CreateMatterIntent {
   description?: string;
   enabledModuleTypes?: ModuleType[];
   deadlineTimestamp?: number;
+  deadlineMode?: DateMode;
   deadlineHasTime?: boolean;
   deadlineLocation?: string;
   note?: string;

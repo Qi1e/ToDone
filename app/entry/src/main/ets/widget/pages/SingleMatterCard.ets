@@ -112,7 +112,7 @@ struct SingleMatterCard {
       return;
     }
     const params: MessageParams = {
-      message: `counter:${this.matterId}:1`
+      message: `counter:${this.matterId}:${this.quickActionType.substring(8)}`
     };
     const action: MessageAction = {
       action: 'message',
@@ -126,7 +126,7 @@ struct SingleMatterCard {
       this.recordOnce();
       return;
     }
-    if (this.quickActionType === 'counter:1') {
+    if (this.quickActionType.startsWith('counter:')) {
       this.counterOnce();
       return;
     }

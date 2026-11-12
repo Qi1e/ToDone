@@ -99,3 +99,11 @@ node scripts/check-ci.mjs
 - 当前环境缺少 ohpm、Hvigor、hdc 和 tools.local.json，未执行 HAP 构建、Hypium、preferences 重启或设备 UI / 卡片验收。
 - 增加 `app/entry/src/ohosTest/ets/test/List.test.ets` 注册原 MatterStore 套件，原测试文件不改动。目标 DevEco 的测试运行配置和设备执行仍需核实，不猜测本机测试命令。
 - 远程 Actions 状态由 PR 检查显示，不能把本地通过写成远程已通过；main 分支保护需单独配置，未完成项在 TODO 跟踪。
+
+## 本地网页交互 Demo
+
+运行 `node demo/web/server.mjs` 后访问 http://127.0.0.1:4173 。无外部依赖、仅监听本机，修改界面源码自动刷新。启动与数据边界见 [Demo 说明](../demo/web/README.md)。
+
+该原型使用独立浏览器数据模型；不修改鸿蒙业务契约。可用 `node --test demo/web/model.test.mjs` 验证日期、计数及幂等更新，不能替代 ArkTS 构建、Hypium 或实机验收。
+
+网页 Demo 的视觉值直接来自原生 `Theme.ets`，由 `theme-sync.mjs` 动态输出；运行 `node --test demo/web/model.test.mjs demo/web/theme.test.mjs` 检查业务与主题引用。页面按 1 CSS px 对应 1 vp 的布局单位展示，浏览器原生日期控件、字体与系统栏不作为鸿蒙最终视觉验收。

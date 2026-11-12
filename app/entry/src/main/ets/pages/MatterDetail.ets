@@ -1,14 +1,14 @@
+import { dateSummary } from '../common/DateFormat';
 import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
-import { formatDate, formatDateTime } from '../common/DateFormat';
+import { formatDateTime } from '../common/DateFormat';
 import { Colors, Radius, Space } from '../common/Theme';
-import { MODULE_OPTIONS, moduleLabel } from '../model/Defaults';
+import { moduleLabel } from '../model/Defaults';
 import {
   ChecklistItem,
   EventRecordEntry,
   Matter,
   ModuleInstance,
-  ModuleOption,
   ModuleType
 } from '../model/Types';
 import { MatterStore } from '../store/MatterStore';
@@ -27,8 +27,6 @@ struct MatterDetail {
   @State titleInput: string = '';
   @State descriptionInput: string = '';
   @State customCounterInput: string = '';
-  @State deadlineDate: Date = new Date();
-  @State deadlineLocationInput: string = '';
   @State noteInput: string = '';
   @State checklistInput: string = '';
   @State changedTick: number = 0;
@@ -58,9 +56,6 @@ struct MatterDetail {
     }
     this.titleInput = matter.title;
     this.descriptionInput = matter.description ?? '';
-    const deadline = this.store.getDeadline(matter.id);
-    this.deadlineDate = deadline ? new Date(deadline.timestamp) : new Date();
-    this.deadlineLocationInput = deadline?.location ?? '';
     this.noteInput = this.store.getNote(matter.id);
     this.enabledModuleSnapshot = matter.enabledModules.slice();
     this.changedTick++;
@@ -68,12 +63,6 @@ struct MatterDetail {
 
   private refreshOnly(): void {
     this.changedTick++;
-  }
-
-  private saveMatter(): void {
-    this.store.updateMatter(this.matterId, this.titleInput, this.descriptionInput);
-    this.loadFields();
-    this.refreshCards('已保存事项');
   }
 
   private refreshCards(prefix: string): void {
@@ -91,21 +80,12 @@ struct MatterDetail {
     });
   }
 
-  private isModuleEnabled(type: ModuleType): boolean {
-    return this.enabledModuleSnapshot.some((module: ModuleInstance) => module.moduleType === type);
-  }
-
   private deadlineDisplayText(): string {
     const deadline = this.store.getDeadline(this.matterId);
-    return deadline ? `当前：${formatDate(deadline.timestamp)}` : '未设置日期';
+    return deadline ? dateSummary(deadline) : '未设置日期';
   }
 
-  private dateFromPickerResult(value: DatePickerResult): Date {
-    const year = value.year ?? this.deadlineDate.getFullYear();
-    const month = value.month ?? this.deadlineDate.getMonth();
-    const day = value.day ?? this.deadlineDate.getDate();
-    return new Date(year, month, day);
-  }
+
 
   build() {
     Navigation() {
@@ -114,9 +94,12 @@ struct MatterDetail {
           this.TopBar();
 
           if (this.currentMatter()) {
-            this.EditPanel();
+            Text(this.titleInput).fontSize(22)
+            if (this.descriptionInput) { Text(this.descriptionInput) }
+            Button('编辑事项').onClick(() => {
+              router.pushUrl({ url: 'pages/CreateMatter', params: { matterId: this.matterId } });
+            })
             this.FeedbackText();
-            this.ModuleSelector();
             this.EnabledModules();
           } else {
             Text('没有找到这个事项')
@@ -169,79 +152,6 @@ struct MatterDetail {
   }
 
   @Builder
-  private EditPanel() {
-    Column({ space: Space.normal }) {
-      Text('事项信息')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text);
-
-      TextInput({ placeholder: '事项名称', text: this.titleInput })
-        .height(44)
-        .fontSize(16)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .onChange((value: string) => {
-          this.titleInput = value;
-        });
-
-      TextInput({ placeholder: '说明，可不填', text: this.descriptionInput })
-        .height(44)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .onChange((value: string) => {
-          this.descriptionInput = value;
-        });
-
-      Button('保存事项')
-        .width('100%')
-        .height(42)
-        .fontSize(15)
-        .fontColor(Color.White)
-        .backgroundColor(Colors.primary)
-        .borderRadius(Radius.normal)
-        .onClick(() => this.saveMatter());
-    }
-    .padding(Space.large)
-    .backgroundColor(Colors.surface)
-    .borderRadius(Radius.large)
-    .border({ width: 1, color: Colors.border });
-  }
-
-  @Builder
-  private ModuleSelector() {
-    if (this.hasCurrentMatter()) {
-      Column({ space: Space.normal }) {
-        Text('信息')
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Colors.text);
-
-        Flex({ wrap: FlexWrap.Wrap }) {
-          ForEach(MODULE_OPTIONS, (option: ModuleOption) => {
-            Button(this.isModuleEnabled(option.type) ? `已启用 ${option.label}` : option.label)
-              .fontSize(14)
-              .fontColor(this.isModuleEnabled(option.type) ? Color.White : Colors.primary)
-              .backgroundColor(this.isModuleEnabled(option.type) ? Colors.primary : Colors.primarySoft)
-              .borderRadius(Radius.normal)
-              .margin({ right: Space.small, bottom: Space.small })
-              .onClick(() => {
-                this.store.toggleModule(this.matterId, option.type);
-                this.loadFields();
-                this.refreshCards('已更新模块');
-              });
-          }, (option: ModuleOption) => option.label);
-        }
-      }
-      .padding(Space.large)
-      .backgroundColor(Colors.surface)
-      .borderRadius(Radius.large)
-      .border({ width: 1, color: Colors.border });
-    }
-  }
-
-  @Builder
   private EnabledModules() {
     if (this.hasCurrentMatter()) {
       ForEach(this.enabledModules(), (module: ModuleInstance) => {
@@ -254,7 +164,7 @@ struct MatterDetail {
   private ModulePanel(type: ModuleType) {
     Column({ space: Space.normal }) {
       Row() {
-        Text(moduleLabel(type))
+        Text(type === ModuleType.EventRecord ? (this.enabledModuleSnapshot.find((m: ModuleInstance) => m.moduleType === type)?.name || moduleLabel(type)) : moduleLabel(type))
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
           .fontColor(Colors.text)
@@ -324,13 +234,13 @@ struct MatterDetail {
     }
 
     Row({ space: Space.small }) {
-      Button('+1')
+      Button(`+${this.store.counterStep(this.matterId)}`)
         .fontSize(15)
         .fontColor(Color.White)
         .backgroundColor(Colors.primary)
         .borderRadius(Radius.normal)
         .onClick(() => {
-          this.store.addCounterEntry(this.matterId, 1);
+          this.store.addCounterEntry(this.matterId, this.store.counterStep(this.matterId));
           this.refreshOnly();
           this.refreshCards('已增加计数');
         });
@@ -386,62 +296,11 @@ struct MatterDetail {
   @Builder
   private DeadlineModule() {
     Text(this.deadlineDisplayText())
-      .fontSize(15)
-      .fontColor(Colors.subText);
-
-    DatePicker({
-      start: new Date('2020-01-01T00:00:00'),
-      end: new Date('2100-12-31T00:00:00'),
-      selected: this.deadlineDate
-    })
-      .width('100%')
-      .onChange((value: DatePickerResult) => {
-        this.deadlineDate = this.dateFromPickerResult(value);
-      });
-
-    TextInput({ placeholder: '地点，可不填', text: this.deadlineLocationInput })
-      .height(42)
-      .fontSize(15)
-      .backgroundColor(Colors.surfaceSoft)
-      .borderRadius(Radius.normal)
-      .onChange((value: string) => {
-        this.deadlineLocationInput = value;
-      });
-
-    Button('保存截止日期')
-      .height(42)
-      .fontSize(15)
-      .fontColor(Color.White)
-      .backgroundColor(Colors.primary)
-      .borderRadius(Radius.normal)
-      .onClick(() => {
-        this.store.setDeadline(this.matterId, this.deadlineDate.getTime(), this.deadlineLocationInput);
-        this.loadFields();
-        this.refreshCards('已保存截止日期');
-      });
   }
 
   @Builder
   private NoteModule() {
-    TextArea({ placeholder: '写一点备注', text: this.noteInput })
-      .height(120)
-      .fontSize(15)
-      .backgroundColor(Colors.surfaceSoft)
-      .borderRadius(Radius.normal)
-      .onChange((value: string) => {
-        this.noteInput = value;
-      });
-    Button('保存备注')
-      .height(42)
-      .fontSize(15)
-      .fontColor(Color.White)
-      .backgroundColor(Colors.primary)
-      .borderRadius(Radius.normal)
-      .onClick(() => {
-        this.store.setNote(this.matterId, this.noteInput);
-        this.loadFields();
-        this.refreshCards('已保存备注');
-      });
+    Text(this.noteInput)
   }
 
   @Builder

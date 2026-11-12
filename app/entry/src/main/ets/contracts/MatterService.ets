@@ -1,3 +1,4 @@
+import { EditorDraft } from '../domain/MatterEditor';
 import { AppState, CreateMatterIntent, Matter } from '../model/Types';
 
 export interface CreateMatterRequest {
@@ -15,6 +16,9 @@ export interface CreateMatterResult {
 }
 
 export interface MatterService {
+  linkCandidates(draft: EditorDraft, ownerId: string): Matter[];
+  loadEditor(id: string): EditorDraft | undefined;
+  saveEditor(draft: EditorDraft, ownerId: string): Promise<CreateMatterResult>;
   activeMatters(): Matter[];
   archivedMatters(): Matter[];
   findMatter(id: string): Matter | undefined;

@@ -32,8 +32,8 @@ export const MODULE_OPTIONS: ModuleOption[] = [
   },
   {
     type: ModuleType.Deadline,
-    label: '截止日期',
-    description: '设置日期，自动显示倒计时'
+    label: '日期与天数',
+    description: '倒数日、正数日或截止时间'
   },
   {
     type: ModuleType.Note,
@@ -113,7 +113,8 @@ export function createMatter(intent: CreateMatterIntent, orderIndex: number): Ma
   if (hasDeadline) {
     const deadline: DeadlineConfig = {
       timestamp: intent.deadlineTimestamp ?? Date.now(),
-      hasTime: intent.deadlineHasTime ?? false,
+      mode: intent.deadlineMode ?? 'deadline',
+      hasTime: (intent.deadlineMode ?? 'deadline') === 'deadline' && (intent.deadlineHasTime ?? false),
       location: intent.deadlineLocation?.trim()
     };
     const deadlineModule = createModuleInstance(matter.id, ModuleType.Deadline);

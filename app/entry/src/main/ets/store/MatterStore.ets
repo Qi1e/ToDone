@@ -3,7 +3,7 @@ import { MatterRepository } from '../contracts/MatterService';
 import { canLinkMatterInState } from '../domain/MatterLinks';
 import { PreferencesStateStorage } from './PreferencesStateStorage';
 import { StateStorage } from './StateStorage';
-import { daysUntil, isToday } from '../common/DateFormat';
+import { dateModeLabel, dateSummary, isToday } from '../common/DateFormat';
 import {
   CLUSTER_COLORS,
   createId,
@@ -19,7 +19,9 @@ import {
   Cluster,
   CounterEntry,
   CreateMatterIntent,
+  CounterConfig,
   DeadlineConfig,
+  DateMode,
   EventRecordEntry,
   Matter,
   ModuleInstance,
@@ -294,14 +296,18 @@ export class MatterStore implements MatterRepository {
     }
     const index = matter.enabledModules.findIndex((module: ModuleInstance) => module.moduleType === type);
     if (index >= 0) {
-      matter.enabledModules.splice(index, 1);
+      const removed = matter.enabledModules.splice(index, 1);
+      matter.disabledModules = (matter.disabledModules ?? []).concat(removed);
       if (type === ModuleType.Deadline) {
         matter.enabledModules = matter.enabledModules.filter((module: ModuleInstance) => {
           return module.moduleType !== ModuleType.Countdown;
         });
       }
     } else {
-      matter.enabledModules.push(createModuleInstance(matterId, type));
+      const hidden = matter.disabledModules ?? [];
+      const previous = hidden.find((module: ModuleInstance) => module.moduleType === type);
+      matter.enabledModules.push(previous ?? createModuleInstance(matterId, type));
+      matter.disabledModules = hidden.filter((module: ModuleInstance) => module.moduleType !== type);
       if (type === ModuleType.Deadline && !this.hasModule(matter, ModuleType.Countdown)) {
         matter.enabledModules.push(createModuleInstance(matterId, ModuleType.Countdown));
       }
@@ -391,10 +397,18 @@ export class MatterStore implements MatterRepository {
     }
   }
 
+  counterSettings(matterId: string): CounterConfig {
+    return this.readConfig<CounterConfig>(matterId, ModuleType.Counter, { mode: 'fixed' });
+  }
+
+  counterStep(matterId: string): number {
+    return this.counterSettings(matterId).fixedSteps?.[0] ?? 1;
+  }
+
   counterTotal(matterId: string): number {
     return this.state.counterEntries
       .filter((entry: CounterEntry) => entry.matterId === matterId)
-      .reduce((total: number, entry: CounterEntry) => total + entry.value, 0);
+      .reduce((total: number, entry: CounterEntry) => total + entry.value, this.counterSettings(matterId).initialValue ?? 0);
   }
 
   counterToday(matterId: string): number {
@@ -436,10 +450,11 @@ export class MatterStore implements MatterRepository {
     });
   }
 
-  setDeadline(matterId: string, timestamp: number, location: string): void {
+  setDeadline(matterId: string, timestamp: number, location: string, mode: DateMode = 'deadline', hasTime: boolean = false): void {
     const config: DeadlineConfig = {
       timestamp,
-      hasTime: false,
+      mode,
+      hasTime: mode === 'deadline' && hasTime,
       location: location.trim()
     };
     this.writeConfig(matterId, ModuleType.Deadline, config);
@@ -455,14 +470,7 @@ export class MatterStore implements MatterRepository {
     if (!deadline) {
       return '未设置截止日期';
     }
-    const days = daysUntil(deadline.timestamp);
-    if (days > 0) {
-      return `剩余 ${days} 天`;
-    }
-    if (days === 0) {
-      return '就是今天';
-    }
-    return `已过去 ${Math.abs(days)} 天`;
+    return dateSummary(deadline);
   }
 
   getNote(matterId: string): string {
@@ -597,6 +605,9 @@ export class MatterStore implements MatterRepository {
       return module.moduleType !== ModuleType.Countdown && module.moduleType !== ModuleType.Progress;
     });
     const parts: string[] = visibleModules.slice(0, 3).map((module: ModuleInstance) => {
+      if (module.moduleType === ModuleType.Deadline) {
+        return dateModeLabel(this.getDeadline(matter.id)?.mode ?? 'deadline');
+      }
       return moduleLabel(module.moduleType);
     });
     if (visibleModules.length > 3) {
@@ -626,7 +637,7 @@ export class MatterStore implements MatterRepository {
       return 'record';
     }
     if (this.hasModule(matter, ModuleType.Counter)) {
-      return 'counter:1';
+      return 'counter:' + this.counterStep(matter.id);
     }
     return 'open';
   }
@@ -636,8 +647,8 @@ export class MatterStore implements MatterRepository {
     if (action === 'record') {
       return '记录';
     }
-    if (action === 'counter:1') {
-      return '+1';
+    if (action.startsWith('counter:')) {
+      return '+' + this.counterStep(matter.id);
     }
     return '打开';
   }
