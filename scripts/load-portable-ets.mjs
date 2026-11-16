@@ -7,8 +7,8 @@ import { stripTypeScriptTypes } from 'node:module';
 // 仅转换白名单中的无 SDK 依赖源码。此检查不是 ArkTS 编译器或 Hypium。
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../app/entry/src/main/ets');
 const sources = [
-  'model/Types', 'model/Defaults', 'contracts/MatterService',
-  'domain/MatterLinks', 'domain/DefaultMatterService', 'mocks/MockMatterService'
+  'common/DateFormat', 'model/Types', 'model/Defaults', 'contracts/MatterService',
+  'domain/MatterLinks', 'domain/MatterEditor', 'domain/DefaultMatterService', 'mocks/MockMatterService'
 ];
 
 export async function loadPortableEts() {

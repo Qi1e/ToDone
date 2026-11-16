@@ -383,6 +383,7 @@ struct Index {
   }
 
   private moduleText(module: ModuleInstance): string {
+    if (module.moduleType === ModuleType.Deadline) return this.store.countdownText(module.matterId);
     const option = MODULE_OPTIONS.find((item: ModuleOption) => item.type === module.moduleType);
     return option ? option.label : '信息';
   }

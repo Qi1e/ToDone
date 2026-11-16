@@ -1,6 +1,8 @@
+import { applyEditor, editorDraft, EditorDraft, EditorItem } from './MatterEditor';
+import { daysUntil } from '../common/DateFormat';
 import { CreateMatterRequest, CreateMatterResult, MatterRepository, MatterService } from '../contracts/MatterService';
-import { createId, createMatter } from '../model/Defaults';
-import { AppState, ChecklistItem, Matter, ModuleType } from '../model/Types';
+import { createId, createMatter, createModuleInstance } from '../model/Defaults';
+import { AppState, ChecklistItem, Matter, ModuleInstance, ModuleType } from '../model/Types';
 import { canLinkMatterInState } from './MatterLinks';
 
 export class DefaultMatterService implements MatterService {
@@ -8,6 +10,38 @@ export class DefaultMatterService implements MatterService {
 
   constructor(repository: MatterRepository) {
     this.repository = repository;
+  }
+
+  linkCandidates(draft: EditorDraft, ownerId: string): Matter[] {
+    if (ownerId) return [];
+    const state = this.repository.readState();
+    let source = state.matters.find((m: Matter) => m.id === draft.id);
+    if (!source) {
+      source = createMatter({ title: draft.title }, state.matters.length);
+      source.id = draft.id;
+      state.matters.push(source);
+    }
+    if (!source.enabledModules.some((m: ModuleInstance) => m.moduleType === ModuleType.Checklist)) {
+      source.enabledModules.push(createModuleInstance(draft.id, ModuleType.Checklist));
+    }
+    state.checklistItems = state.checklistItems.filter((i: ChecklistItem) => i.matterId !== draft.id);
+    return state.matters.filter((m: Matter) => canLinkMatterInState(state, draft.id, m.id) &&
+      !m.enabledModules.some((module: ModuleInstance) => module.moduleType === ModuleType.Checklist) &&
+      !draft.items.some((i: EditorItem) => i.targetId === m.id));
+  }
+
+  loadEditor(id: string): EditorDraft | undefined {
+    return editorDraft(this.repository.readState(), id);
+  }
+
+  async saveEditor(draft: EditorDraft, ownerId: string): Promise<CreateMatterResult> {
+    const state = this.repository.readState();
+    if (draft.token && state.matters.some((m: Matter) => m.id === draft.id && m.lastEditorToken === draft.token)) {
+      return this.persist(state, draft.id);
+    }
+    const error = applyEditor(state, draft, ownerId);
+    if (error) return this.failure('invalid_editor', error);
+    return this.persist(state, draft.id);
   }
 
   activeMatters(): Matter[] {
@@ -35,6 +69,10 @@ export class DefaultMatterService implements MatterService {
     if ((types.includes(ModuleType.Deadline) || intent.deadlineTimestamp !== undefined) &&
       (intent.deadlineTimestamp === undefined || !Number.isFinite(intent.deadlineTimestamp))) {
       return this.failure('invalid_deadline', '请选择有效的截止日期');
+    }
+    if (intent.deadlineMode === 'elapsed' && intent.deadlineTimestamp !== undefined &&
+      daysUntil(intent.deadlineTimestamp) > 0) {
+      return this.failure('invalid_deadline', '正数日的起始日期不能晚于今天');
     }
     const titles = (request.checklistTitles ?? []).map((title: string) => title.trim())
       .filter((title: string) => title.length > 0);
