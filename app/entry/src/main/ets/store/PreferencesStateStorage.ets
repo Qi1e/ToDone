@@ -4,17 +4,20 @@ import { StateStorage } from './StateStorage';
 
 export class PreferencesStateStorage implements StateStorage {
   private pref: preferences.Preferences;
+  private key: string;
 
-  constructor(context: common.UIAbilityContext | common.FormExtensionContext) {
-    this.pref = preferences.getPreferencesSync(context, { name: 'todone_store' });
+  constructor(context: common.UIAbilityContext | common.FormExtensionContext,
+    name: string = 'todone_store', key: string = 'app_state_v1') {
+    this.pref = preferences.getPreferencesSync(context, { name: name });
+    this.key = key;
   }
 
   read(): string {
-    return this.pref.getSync('app_state_v1', '') as string;
+    return this.pref.getSync(this.key, '') as string;
   }
 
   write(snapshot: string): Promise<void> {
-    this.pref.putSync('app_state_v1', snapshot);
+    this.pref.putSync(this.key, snapshot);
     return this.pref.flush();
   }
 }

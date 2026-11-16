@@ -8,7 +8,11 @@ import { stripTypeScriptTypes } from 'node:module';
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../app/entry/src/main/ets');
 const sources = [
   'common/DateFormat', 'model/Types', 'model/Defaults', 'contracts/MatterService',
-  'domain/MatterLinks', 'domain/MatterEditor', 'domain/DefaultMatterService', 'mocks/MockMatterService'
+  'domain/MatterLinks', 'domain/MatterEditor', 'domain/DefaultMatterService', 'mocks/MockMatterService',
+  'contracts/TimelineService', 'store/StateStorage', 'domain/TimelineReadError', 'domain/TimelineRecurrence', 'domain/TimelineReminderPlan',
+  'domain/DefaultTimelineService', 'domain/TimelineLayout', 'domain/TimelineDayRing',
+  'domain/CalendarAnnotation', 'domain/HomeMonthCalendar', 'domain/TimelineNoteLinks',
+  'components/TimelineBrowseMotion'
 ];
 
 export async function loadPortableEts() {

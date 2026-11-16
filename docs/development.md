@@ -1,5 +1,7 @@
 # 开发与验证
 
+制作或核对页面原型时，参考[界面开发手册](ui-handbook/README.md)中的效果图和交互说明。
+
 ## 工作空间
 - Windows + DevEco Studio 用于应用编译、签名和实机运行。DevEco 打开仓库的 `app/`；Codex / VS Code 打开仓库根目录，使其读取 [工作规则](../AGENTS.md)。新增规则后开启新会话，要求 Codex 简述已加载的项目规则以确认生效。
 - 用户已确认当前 main 曾实机运行；尚未记录具体工具版本与验收范围。当前状态统一见 [TODO](../TODO.md)。
@@ -78,11 +80,13 @@ node scripts/verify.mjs --build
 node scripts/check-ci.mjs
 ```
 
-它调用原文档检查、检查 scripts/ 中 Node 脚本语法，并执行 `tests/matter-service.test.mjs`。不运行 npm install，不修改 SDK 或原 `verify.mjs` 的通过条件。
+它调用原文档检查、检查 scripts/ 中 Node 脚本语法，并执行事项服务与[时间线业务回归](../tests/timeline.test.mjs)。后者使用真实业务代码与临时文件验证重新读回、失败重试、跨日与重叠。设备上的 preferences、原生组件、系统键盘和触控另做验收。不运行 npm install，不修改 SDK 或原 `verify.mjs` 的通过条件。
 
 测试读取白名单中的真实无 SDK 依赖 `.ets` 源码，用 Node 内置的实验性 `stripTypeScriptTypes` 转换到临时目录执行；仅移除已知接口/类型导入，不编译 ArkUI，也不验证 ArkTS 严格模式。Node 小版本升级可能影响该实验性转换入口，变更 Node 时须重新运行检查。
 
 [GitHub Actions](../.github/workflows/ci.yml) 在 PR 和 main 推送上运行同一命令，稳定检查名为 `portable-checks`。状态检查配置见 [协作说明](../CONTRIBUTING.md)。CI 结果不能充当 `assembleHap`、Hypium、preferences 重启持久化或系统卡片验收证据。
+
+2026-11-13，独立时间块首个原生切片在 macOS 使用 Node 24.14.0 执行 `node scripts/check-ci.mjs`：16 份文档路径检查、8 项既有业务测试和 7 项时间线测试通过。`node scripts/verify.mjs --build` 因缺本机配置退出 2，未启动编译。Hypium 与设备验收待在目标 DevEco 环境执行。
 
 ## 契约与 Mock 开发
 

@@ -1,6 +1,7 @@
 {
   "src": [
     "pages/Index",
+    "pages/Timeline",
     "pages/CreateMatter",
     "pages/MatterDetail",
     "pages/WidgetPreview"
