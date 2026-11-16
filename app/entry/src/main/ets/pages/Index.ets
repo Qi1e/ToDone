@@ -3,6 +3,12 @@ import { unifiedDataChannel } from '@kit.ArkData';
 import { router } from '@kit.ArkUI';
 import { Colors, Radius, Space } from '../common/Theme';
 import { Chip } from '../components/Chip';
+import { TimelineBrowseDates } from '../components/TimelineBrowseDates';
+import { monthStart } from '../components/TimelineDatePicker';
+import { TimelineServices } from '../application/TimelineServices';
+import { TimelineBlock, TimelineTag } from '../contracts/TimelineService';
+import { localDayStart } from '../domain/TimelineLayout';
+import { timelineReadCode } from '../domain/TimelineReadError';
 import { MODULE_OPTIONS } from '../model/Defaults';
 import { Matter, ModuleInstance, ModuleOption, ModuleType } from '../model/Types';
 import { MatterStore } from '../store/MatterStore';
@@ -16,7 +22,16 @@ const MATTER_DRAG_TYPE: string = 'ApplicationDefined.ToDoneMatter';
 struct Index {
   private store: MatterStore = MatterStore.getInstance();
   private service: MatterService = MatterServices.getService();
+  private midnightTimer: number = -1;
 
+  @State calendarLevel: number = 0;
+  @State calendarDay: number = localDayStart(Date.now());
+  @State browseMonth: number = monthStart(this.calendarDay);
+  @State today: number = localDayStart(Date.now());
+  @State calendarHeight: number = 0;
+  @State scheduleBlocks: TimelineBlock[] = [];
+  @State scheduleTags: TimelineTag[] = [];
+  @State calendarError: string = '';
   @State searchText: string = '';
   @State showArchived: boolean = false;
   @State matters: Matter[] = [];
@@ -35,6 +50,60 @@ struct Index {
 
   onPageShow(): void {
     this.refresh();
+    this.refreshToday();
+    this.refreshCalendar();
+  }
+
+  onPageHide(): void {
+    clearTimeout(this.midnightTimer);
+  }
+
+  aboutToDisappear(): void {
+    clearTimeout(this.midnightTimer);
+  }
+
+  private refreshToday(): void {
+    clearTimeout(this.midnightTimer);
+    const now = Date.now();
+    const today = localDayStart(now);
+    if (today !== this.today && this.calendarDay === this.today) this.selectDay(today);
+    this.today = today;
+    this.midnightTimer = setTimeout(() => this.refreshToday(), localDayStart(now, 1) - now);
+  }
+
+  onBackPress(): boolean {
+    if (this.calendarLevel === 0) return false;
+    this.calendarLevel--;
+    return true;
+  }
+
+  private selectDay(day: number): void {
+    this.calendarDay = localDayStart(day);
+    this.browseMonth = monthStart(day);
+  }
+
+  private refreshCalendar(): void {
+    if (MatterServices.isPreview()) return;
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const service = TimelineServices.get(context);
+      const blocks = service.list();
+      const tags = service.listTags();
+      this.scheduleBlocks = blocks;
+      this.scheduleTags = tags;
+      this.calendarError = '';
+    } catch (error) {
+      this.calendarError = timelineReadCode(error as Error, 'LIST');
+    }
+  }
+
+  private openTimeline(block?: TimelineBlock): void {
+    if (block) {
+      router.pushUrl({ url: 'pages/Timeline', params: { day: this.calendarDay, blockId: block.id,
+        originalStart: block.occurrenceOriginalStart ?? block.startAt } });
+    } else {
+      router.pushUrl({ url: 'pages/Timeline', params: { day: this.calendarDay } });
+    }
   }
 
   private refresh(): void {
@@ -89,20 +158,26 @@ struct Index {
 
   build() {
     Navigation() {
-      Column({ space: Space.normal }) {
-        this.HeaderBar();
-        this.SearchBar();
-        this.MatterList();
+      Column() {
+        Column() { this.HeaderBar(); }
+          .width('100%').padding({ left: Space.large, right: Space.large, top: Space.normal, bottom: Space.small });
+        Column() {
+          TimelineBrowseDates({ day: this.calendarDay, today: this.today, level: $calendarLevel, month: $browseMonth,
+            availableHeight: this.calendarHeight, blocks: this.scheduleBlocks, tags: this.scheduleTags,
+            readError: this.calendarError, onRetry: () => this.refreshCalendar(),
+            onSelectDay: (day: number) => this.selectDay(day),
+            onSelectBlock: (block: TimelineBlock) => this.openTimeline(block) }).backgroundColor(Colors.surface);
+          Column() {
+            Column({ space: Space.normal }) {
+              this.SearchBar();
+              this.MatterList();
+            }.width('100%').height('100%').padding(Space.large);
+          }.width('100%').layoutWeight(1).clip(true)
+          .accessibilityLevel(this.calendarLevel === 2 ? 'no-hide-descendants' : 'auto');
+        }.width('100%').layoutWeight(1)
+        .onAreaChange((_old: Area, area: Area) => { this.calendarHeight = Number(area.height); });
       }
-      .width('100%')
-      .height('100%')
-      .padding({
-        left: Space.large,
-        right: Space.large,
-        top: Space.large,
-        bottom: Space.large
-      })
-      .backgroundColor(Colors.page)
+      .width('100%').height('100%').backgroundColor(Colors.page)
       .enabled(!MatterServices.isPreview());
     }
     .title('ToDone')
@@ -122,6 +197,14 @@ struct Index {
       .alignItems(HorizontalAlign.Start);
 
       Row({ space: Space.small }) {
+        Button('时间线')
+          .fontSize(14)
+          .fontColor(Colors.primary)
+          .backgroundColor(Colors.primarySoft)
+          .borderRadius(Radius.normal)
+          .onClick(() => {
+            this.openTimeline();
+          });
         Button('新建')
           .fontSize(14)
           .fontColor(Color.White)

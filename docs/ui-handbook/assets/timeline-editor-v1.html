@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ToDone · Timeline 添加日程 · 冻结稿 v1</title>
+<style>body{margin:0}i[data-lucide="paperclip"]::before{content:"📎︎";font-style:normal}</style>
+</head>
+<body>
+<div id="todone-schedule" class="viz-dotted-background" lang="zh-CN">
+  <article class="window">
+    <div data-el="calendar"><section class="td-draft-cal" aria-label="日程日期">
+  <div data-cal-week>
+    <div class="td-cal-top">
+      <button type="button" class="td-cal-month-toggle" data-cal-open aria-label="展开选日月历" aria-expanded="false"><span data-cal-week-title></span><span aria-hidden="true">⌄</span></button>
+      <span class="td-cal-context">时间线</span>
+    </div>
+    <button type="button" class="td-cal-week" data-cal-week-strip aria-label="选择日期" aria-expanded="false"></button>
+  </div>
+  <div data-cal-month hidden>
+    <div class="td-cal-top">
+      <span class="td-cal-context" data-cal-field></span>
+      <button type="button" class="td-cal-close" data-cal-close>取消</button>
+    </div>
+    <div class="td-cal-month-head">
+      <strong data-cal-month-title aria-live="polite"></strong>
+      <div class="td-cal-arrows">
+        <button type="button" aria-label="上个月" data-cal-prev>‹</button>
+        <button type="button" aria-label="下个月" data-cal-next>›</button>
+      </div>
+    </div>
+    <div class="td-cal-weeknames" aria-hidden="true"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+    <div class="td-cal-days" data-cal-days role="group" aria-label="选择日期"></div>
+  </div>
+</section></div>
+    <section class="sheet">
+      <div class="handle" aria-hidden="true"></div>
+      <form data-el="editor">
+        <header><h2 data-el="heading">新建日程</h2><button class="save" data-el="save" type="submit">保存</button></header>
+        <div class="fields">
+          <input class="name" data-el="title" aria-label="日程名称" placeholder="日程名称" autocomplete="off" required>
+          <div data-el="body">
+          <div class="times">
+            <div class="time-row"><span>开始</span><button type="button" data-el="startDay" value="2026-11-13" aria-expanded="false"></button><button type="button" data-el="startTime" value="14:00" aria-expanded="false">14:00</button></div>
+            <div class="time-row"><span>结束</span><button type="button" data-el="endDay" value="2026-11-13" aria-expanded="false"></button><button type="button" data-el="endTime" value="15:00" aria-expanded="false">15:00</button></div>
+          </div>
+          <div data-el="clockBox" class="clock-box" hidden><div class="clock-head"><span data-el="clockTitle"></span><button type="button" data-el="finishTime">完成</button></div><div data-el="wheel"><div class="td-clock" role="group" aria-label="选择时间">
+  <div class="td-clock-column" role="spinbutton" tabindex="0" aria-label="小时" aria-valuemin="0" aria-valuemax="23" data-wheel-unit="hour"></div>
+  <span class="td-clock-separator" aria-hidden="true">:</span>
+  <div class="td-clock-column" role="spinbutton" tabindex="0" aria-label="分钟" aria-valuemin="0" aria-valuemax="59" data-wheel-unit="minute"></div>
+</div></div></div>
+          <div class="duration" data-el="duration">共 1 小时</div>
+          <div class="labels"><span class="muted">标签</span><div class="chips" data-el="chips"></div><button type="button" class="plus" aria-label="查看全部标签" aria-expanded="false" aria-controls="td-all-tags" data-el="tagToggle">＋</button></div>
+          <div class="opts">
+            <label><span aria-hidden="true">↻</span> 重复<select data-el="repeat"><option>不重复</option><option>每天</option><option>仅工作日</option><option>每周</option><option>每月</option></select></label>
+            <small class="repeat-preview" data-el="repeatPreview" hidden></small>
+            <label><span aria-hidden="true">◷</span> 提醒<select data-el="reminder"><option value="">不提醒</option><option value="0">开始时</option><option value="5">提前 5 分钟</option><option value="10">提前 10 分钟</option><option value="15">提前 15 分钟</option><option value="30">提前 30 分钟</option><option value="60">提前 1 小时</option><option value="1440">提前 1 天</option></select></label>
+          </div>
+          <div class="notes-head"><label for="td-sched-notes">备注</label><button type="button" class="attach" data-el="attach" aria-label="添加附件" aria-expanded="false"><i data-lucide="paperclip" aria-hidden="true"></i><span>附件</span></button></div>
+          <textarea id="td-sched-notes" data-el="notes" rows="1" placeholder="添加备注"></textarea>
+          <div class="sub" data-el="attachmentBox" hidden><div class="attachments-actions"><button type="button" data-el="pick">选择文件、图片或音频</button><button type="button" data-el="showUrl">添加网址</button></div><input type="file" data-el="files" multiple hidden><div class="url-row" data-el="urlBox" hidden><input type="url" data-el="url" placeholder="https://" aria-label="附件网址"><button type="button" data-el="addUrl">加入备注</button></div></div>
+          <ul class="files" data-el="fileList"></ul><div class="err" role="alert" data-el="error"></div>
+          </div>
+        </div>
+      </form>
+      <form class="tag-page" data-el="tagPage" hidden>
+        <header><button type="button" class="back" data-el="tagBack">返回</button><h2>新建标签</h2><button type="submit" class="save">保存</button></header>
+        <div class="fields">
+          <label class="field-label" for="td-new-tag-name">标签名称</label>
+          <input id="td-new-tag-name" class="name" data-el="tagName" placeholder="例如 🎓 答辩" autocomplete="off" required>
+          <fieldset class="color-field"><legend class="field-label">颜色</legend><div class="palette" data-el="palette"></div></fieldset>
+          <div class="err" data-el="tagError" role="alert"></div>
+        </div>
+      </form>
+      <section data-el="result" hidden><header><h2>已加入时间线</h2><button type="button" data-el="edit">编辑</button></header><div class="fields"><div data-el="savedDate" class="muted"></div><div class="slip" data-el="slip"><b data-el="savedTitle"></b><span data-el="savedTime"></span><small data-el="savedTag"></small></div><div class="summary" data-el="summary"></div></div></section>
+    </section>
+    <div class="tag-popup" data-el="tagPopup" id="td-all-tags" role="group" aria-label="全部标签" hidden>
+      <div data-el="allTags" class="all-tags"></div>
+      <button type="button" class="create-tag" data-el="createTag"><span aria-hidden="true">＋</span>新建标签</button>
+    </div>
+  </article>
+</div>
+<style>
+#todone-schedule{--paper:light-dark(#fff,#242625);--screen:light-dark(#eeefeb,#1c1e1d);--ink:light-dark(#202521,#eff2ed);--secondary:light-dark(#626961,#b5bdb5);--line:light-dark(#dfe2dd,#404640);--chip:light-dark(#f0f1ee,#333833);--ok:light-dark(#29604c,#a6e1c4);--err:light-dark(#a52c25,#ffaea6);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;padding:14px 8px;box-sizing:border-box;color-scheme:light dark}
+#todone-schedule *{box-sizing:border-box}#todone-schedule [hidden]{display:none!important}
+#todone-schedule .window{position:relative;max-width:390px;margin:auto;border:1px solid var(--line);border-radius:24px;background:var(--screen);overflow:hidden}
+#todone-schedule .sheet{background:var(--paper);border-radius:20px 20px 0 0;border-top:1px solid var(--line);padding-bottom:9px}
+#todone-schedule .handle{width:32px;height:4px;border-radius:5px;background:var(--line);margin:7px auto 3px}
+#todone-schedule header{display:flex;align-items:center;justify-content:space-between;padding:6px 17px}
+#todone-schedule h2{font-family:inherit;font-size:16px;font-weight:600;margin:0;color:var(--ink)}
+#todone-schedule button,#todone-schedule select,#todone-schedule input,#todone-schedule textarea{font:inherit;color:var(--ink)}
+#todone-schedule button,#todone-schedule select{background:var(--chip);border:0;border-radius:8px;padding:5px 9px}
+#todone-schedule .save{color:var(--paper);background:var(--ink);font-size:14px;font-weight:600;padding:7px 16px;border-radius:10px}
+#todone-schedule .fields{padding:0 17px 7px}
+#todone-schedule input.name{display:block;width:100%;font-size:23px;font-weight:540;line-height:1.5;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:9px 0;background:var(--paper)}
+#todone-schedule .times{padding:6px 0 0}
+#todone-schedule .time-row{display:grid;grid-template-columns:minmax(34px,1fr) auto auto;gap:9px;align-items:center;min-height:43px}
+#todone-schedule .time-row button{background:transparent;min-height:42px;padding:3px 5px;color:var(--ink);font-variant-numeric:tabular-nums}
+#todone-schedule .time-row button:first-of-type{font-size:14px;color:var(--secondary)}
+#todone-schedule .time-row button:last-of-type{font-size:21px;font-weight:550;letter-spacing:-.6px}
+#todone-schedule .time-row button[aria-expanded=true]{color:var(--ok);background:var(--chip)}
+#todone-schedule .clock-box{padding:3px 8px 6px}#todone-schedule .clock-head{display:flex;align-items:center;justify-content:space-between}
+#todone-schedule .clock-head span{font-size:13px;color:var(--secondary)}
+#todone-schedule .clock-head button{background:transparent;color:var(--ok);padding:5px 0}
+#todone-schedule .muted,#todone-schedule .duration,#todone-schedule .notes-head label{color:var(--secondary);font-size:13px}
+#todone-schedule .duration{text-align:right;min-height:20px}
+#todone-schedule .labels,#todone-schedule .chips,#todone-schedule .attachments-actions,#todone-schedule .url-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#todone-schedule .labels{margin:9px 0 13px}#todone-schedule .chips{min-width:0}
+#todone-schedule .chips button,#todone-schedule .plus{border-radius:20px;background:var(--chip);font-size:13px;max-width:100%;overflow-wrap:anywhere}
+#todone-schedule [data-color=blue]{--dot:#4384bb;--tag:light-dark(#d7e9fc,#354c65)}
+#todone-schedule [data-color=purple]{--dot:#9a7bc7;--tag:light-dark(#e8def6,#50425f)}
+#todone-schedule [data-color=green]{--dot:#60ac87;--tag:light-dark(#d6eadb,#374f41)}
+#todone-schedule [data-color=orange]{--dot:#dd9a54;--tag:light-dark(#fae1c9,#604935)}
+#todone-schedule [data-color=red]{--dot:#dd6664;--tag:light-dark(#f9dbda,#614240)}
+#todone-schedule [data-color=yellow]{--dot:#e0bd3d;--tag:light-dark(#f4e9ad,#574e2c)}
+#todone-schedule .chips [aria-pressed=true]{background:var(--tag);font-weight:600}
+#todone-schedule .tag-popup{position:absolute;z-index:4;display:flex;flex-direction:column;width:min(215px,calc(100% - 20px));padding:5px;background:light-dark(#fffcfa,#323431);border:1px solid var(--line);border-radius:16px;box-shadow:0 6px 25px #151b2126}
+#todone-schedule .all-tags{overflow-y:auto;overscroll-behavior:contain;min-height:0}
+#todone-schedule .tag-popup button{display:flex;align-items:center;gap:11px;text-align:start;width:100%;min-height:39px;border-radius:9px;background:transparent;padding:6px 10px;font-size:15px}
+#todone-schedule .tag-popup button:is(:hover,:focus-visible){background:var(--chip)}
+#todone-schedule .tag-popup button[aria-pressed=true]::after{content:"✓";margin-left:auto}
+#todone-schedule .tag-dot{flex:0 0 12px;width:12px;height:12px;background:var(--dot);border-radius:50%}
+#todone-schedule .tag-popup .tag-label{overflow-wrap:anywhere;min-width:0}
+#todone-schedule .tag-popup .create-tag{flex-shrink:0;margin-top:4px;padding-block:9px;border-top:1px solid var(--line);border-radius:0 0 9px 9px}
+#todone-schedule .tag-page header{display:grid;grid-template-columns:1fr auto 1fr;gap:8px}
+#todone-schedule .tag-page .back{justify-self:start;background:transparent;padding-left:0}
+#todone-schedule .tag-page .save{justify-self:end}
+#todone-schedule .tag-page .fields{padding-block:20px}
+#todone-schedule .tag-page .field-label{display:block;color:var(--secondary);font-size:14px}
+#todone-schedule .color-field{margin:24px 0 0;padding:0;border:0;min-width:0}
+#todone-schedule .palette{display:flex;flex-wrap:wrap;margin-top:8px;gap:3px}
+#todone-schedule .swatch{position:relative;display:grid;place-items:center;width:42px;height:44px}
+#todone-schedule .swatch input{position:absolute;inset:0;opacity:0;width:100%;height:100%;margin:0}
+#todone-schedule .swatch span{background:var(--dot);width:25px;height:25px;border-radius:50%;pointer-events:none}
+#todone-schedule .swatch input:checked+span{outline:2px solid var(--ink);outline-offset:3px}
+#todone-schedule .swatch:focus-within{outline:1px dashed var(--secondary);border-radius:8px}
+#todone-schedule .opts{border-block:1px solid var(--line);padding:3px 0}
+#todone-schedule .opts label{display:flex;align-items:center;gap:7px;min-height:38px}
+#todone-schedule .opts label span{color:var(--secondary);width:18px;text-align:center}
+#todone-schedule .opts select{margin-left:auto;background:var(--paper);color:var(--secondary);max-width:65%;font-size:14px}
+#todone-schedule .repeat-preview{display:block;color:var(--secondary);padding:0 2px 6px 25px;font-size:12px}
+#todone-schedule .time-row button:first-of-type{touch-action:pan-x}
+#todone-schedule .notes-head{display:flex;align-items:center;justify-content:space-between;margin-top:6px}
+#todone-schedule .attach{display:flex;align-items:center;gap:4px;background:var(--paper);font-size:13px;color:var(--secondary)}#todone-schedule .attach svg{width:16px;height:16px}
+#todone-schedule .sub input{display:block;width:100%;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--paper)}
+#todone-schedule textarea{display:block;width:100%;background:transparent;border:0;box-shadow:none;border-radius:0;padding:6px 0 12px;resize:none;min-height:42px;overflow:hidden;line-height:1.55}
+#todone-schedule :is(input[placeholder],textarea[placeholder]):focus{outline:none;box-shadow:none;background:transparent;caret-color:var(--ink)}
+#todone-schedule :is(input[placeholder],textarea[placeholder]):focus::placeholder{opacity:0}
+#todone-schedule input.name:focus-visible{border-bottom-color:var(--secondary)}
+#todone-schedule .url-row input:focus{border-color:transparent;border-bottom-color:var(--secondary)}
+#todone-schedule .notes-head:has(+textarea:focus) label{color:var(--ok);text-decoration:underline;text-underline-offset:4px}
+#todone-schedule [data-el=body]:not([hidden]){animation:td-form-return .18s ease-out}
+@keyframes td-form-return{from{opacity:.78;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){#todone-schedule [data-el=body]{animation:none!important}}
+#todone-schedule .sub{background:var(--chip);padding:9px;border-radius:8px;margin:6px 0;font-size:13px}
+#todone-schedule .sub button,#todone-schedule .sub select{background:var(--paper)}#todone-schedule .url-row{display:flex;align-items:end;gap:5px}#todone-schedule .url-row input{flex:1;min-width:0}
+#todone-schedule .url-row{margin-top:7px}
+#todone-schedule .files{list-style:none;padding:0;margin:4px 0}
+#todone-schedule .files li{display:flex;align-items:center;justify-content:space-between;gap:8px;overflow-wrap:anywhere;font-size:13px;padding:3px 0}
+#todone-schedule .err{color:var(--err);font-size:13px}
+#todone-schedule .slip{border-radius:9px;background:var(--tag,var(--chip));padding:14px;display:grid;gap:4px;margin:10px 0;overflow-wrap:anywhere}
+#todone-schedule .summary{white-space:pre-line;overflow-wrap:anywhere;color:var(--secondary);font-size:14px}
+@media(pointer:coarse){#todone-schedule button,#todone-schedule select{min-height:44px}#todone-schedule textarea,#todone-schedule .sub input{font-size:16px}}
+#todone-schedule .td-draft-cal{padding:6px 13px 9px;color:var(--ink);user-select:none;-webkit-user-select:none}
+#todone-schedule .td-draft-cal [hidden]{display:none!important}
+#todone-schedule .td-draft-cal .td-cal-top,#todone-schedule .td-draft-cal .td-cal-month-head,#todone-schedule .td-draft-cal .td-cal-arrows{display:flex;align-items:center;justify-content:space-between}
+#todone-schedule .td-draft-cal .td-cal-top{margin:0 4px;min-height:31px}
+#todone-schedule .td-draft-cal .td-cal-context,#todone-schedule .td-draft-cal .td-cal-close{font-size:13px;color:var(--secondary)}
+#todone-schedule .td-draft-cal button.td-cal-month-toggle,#todone-schedule .td-draft-cal button.td-cal-week,#todone-schedule .td-draft-cal button.td-cal-close,#todone-schedule .td-draft-cal .td-cal-arrows button,#todone-schedule .td-draft-cal .td-cal-days button{border:0;background:transparent;color:inherit}
+#todone-schedule .td-draft-cal button.td-cal-month-toggle{display:inline-flex;align-items:center;gap:6px;font-size:16px;font-weight:600;padding:3px 3px 3px 0}
+#todone-schedule .td-draft-cal .td-cal-month-toggle span:last-child{color:var(--secondary);font-weight:400}
+#todone-schedule .td-draft-cal button.td-cal-week,#todone-schedule .td-draft-cal .td-cal-weeknames,#todone-schedule .td-draft-cal .td-cal-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));width:100%;text-align:center}
+#todone-schedule .td-draft-cal button.td-cal-week{padding:0;touch-action:pan-x}
+#todone-schedule .td-draft-cal .td-cal-week-cell{display:grid;justify-items:center;gap:1px;position:relative;padding:1px 0 4px}
+#todone-schedule .td-draft-cal .td-cal-weekday,#todone-schedule .td-draft-cal .td-cal-weeknames{color:var(--secondary);font-size:12px}
+#todone-schedule .td-draft-cal .td-cal-number{position:relative;display:grid;place-items:center;min-width:32px;height:32px;border-radius:50%;font-size:16px;font-weight:500;font-variant-numeric:tabular-nums}
+#todone-schedule .td-draft-cal .td-cal-selected .td-cal-number{background:var(--ink);color:var(--paper)}
+#todone-schedule .td-draft-cal .td-cal-today .td-cal-number::after{position:absolute;bottom:2px;width:3px;height:3px;border-radius:50%;background:currentColor;content:""}
+#todone-schedule .td-draft-cal .td-cal-month-head{margin:0 0 4px 4px}#todone-schedule .td-draft-cal .td-cal-month-head strong{font-size:19px;font-weight:600}
+#todone-schedule .td-draft-cal .td-cal-arrows{gap:2px}#todone-schedule .td-draft-cal .td-cal-arrows button{width:37px;height:36px;font-size:23px;line-height:1;padding:0}
+#todone-schedule .td-draft-cal .td-cal-weeknames{padding:5px 0}
+#todone-schedule .td-draft-cal [data-cal-month]{touch-action:pan-x}
+#todone-schedule .td-draft-cal .td-cal-days button{display:grid;place-items:center;min-width:0;min-height:35px;padding:0;border-radius:8px}
+#todone-schedule .td-draft-cal .td-cal-days .td-cal-outside{color:var(--secondary)}
+#todone-schedule .td-draft-cal button:disabled{opacity:1}#todone-schedule .td-draft-cal button:disabled span[aria-hidden=true]{visibility:hidden}
+@media(pointer:coarse){#todone-schedule .td-draft-cal .td-cal-days button,#todone-schedule .td-draft-cal .td-cal-arrows button,#todone-schedule .td-draft-cal button.td-cal-month-toggle,#todone-schedule .td-draft-cal button.td-cal-close{min-height:44px}#todone-schedule .td-draft-cal .td-cal-arrows button{min-width:44px}}
+.td-clock {
+  --wheel-row: 38px;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr);
+  align-items: center;
+  max-width: 260px;
+  margin: 0 auto;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.td-clock::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 100%;
+  height: var(--wheel-row);
+  top: var(--wheel-row);
+  border-radius: 10px;
+  background: var(--chip);
+}
+.td-clock-column {
+  height: calc(3 * var(--wheel-row));
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  scrollbar-width: none;
+  scroll-snap-type: y mandatory;
+  cursor: ns-resize;
+  border-radius: 8px;
+}
+.td-clock-column::-webkit-scrollbar { display: none; }
+.td-clock-column::before, .td-clock-column::after {
+  display: block;
+  content: "";
+  height: var(--wheel-row);
+}
+.td-clock-column[data-dragging] { scroll-snap-type: none; }
+.td-clock-column:focus-visible { outline: 2px solid var(--ok); outline-offset: -2px; }
+.td-clock-row {
+  display: grid;
+  place-items: center;
+  height: var(--wheel-row);
+  scroll-snap-align: center;
+  color: var(--secondary);
+  font-size: 18px;
+}
+.td-clock-row.is-current { color: var(--ink); font-size: 22px; font-weight: 600; }
+.td-clock-separator { color: var(--ink); font-size: 19px; text-align: center; }
+@media (pointer: coarse) { .td-clock { --wheel-row: 44px; } }
+</style>
+<script>
+(()=>{
+  function createDraftCalendar(host,{onSelect,onClose,onOpen}) {
+  const find=key=>host.querySelector('[data-cal-'+key+']');
+  const week=find('week'), strip=find('week-strip'), month=find('month'), days=find('days');
+  const weekdays=['一','二','三','四','五','六','日'];
+  const iso=d=>[String(d.getFullYear()).padStart(4,'0'),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-');
+  const parse=s=>new Date(s+'T12:00:00');
+  const addDays=(d,n)=>new Date(d.getFullYear(),d.getMonth(),d.getDate()+n,12);
+  const weekIndex=d=>(d.getDay()+6)%7;
+  const monthStart=d=>new Date(d.getFullYear(),d.getMonth(),1,12);
+  const title=d=>d.getFullYear()+'年'+(d.getMonth()+1)+'月';
+  const today=iso(new Date());
+  let selected=today, shown=monthStart(parse(selected)), expanded=false, enabled=true;
+  const span=(name,text)=>{const s=document.createElement('span');s.className=name;s.textContent=text;return s;};
+  function stateClasses(node,day) {
+    node.classList.toggle('td-cal-selected',day===selected);
+    node.classList.toggle('td-cal-today',day===today);
+  }
+  function renderWeek() {
+    const anchor=parse(selected), monday=addDays(anchor,-weekIndex(anchor));
+    find('week-title').textContent=(anchor.getMonth()+1)+'月';
+    strip.setAttribute('aria-label',selected+'，展开选日月历');
+    strip.replaceChildren();
+    weekdays.forEach((weekday,index)=>{
+      const d=addDays(monday,index);
+      const cell=span('td-cal-week-cell','');
+      stateClasses(cell,iso(d));
+      cell.append(span('td-cal-weekday',weekday),span('td-cal-number',d.getDate()));
+      strip.append(cell);
+    });
+  }
+  function renderMonth(direction=0) {
+    find('month-title').textContent=title(shown);
+    days.setAttribute('aria-label',title(shown)+'，选择日期');
+    const first=addDays(shown,-weekIndex(shown));
+    days.replaceChildren();
+    for(let i=0;i<42;i++){
+      const d=addDays(first,i), day=iso(d), b=document.createElement('button');
+      b.type='button';b.dataset.day=day;
+      stateClasses(b,day);
+      b.classList.toggle('td-cal-outside',d.getMonth()!==shown.getMonth());
+      b.setAttribute('aria-pressed',String(day===selected));
+      if(day===today)b.setAttribute('aria-current','date');
+      b.setAttribute('aria-label',title(d)+d.getDate()+'日，周'+weekdays[weekIndex(d)]);
+      b.append(span('td-cal-number',d.getDate()));days.append(b);
+    }
+    if(direction&&days.animate&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      days.animate([{transform:'translateY('+direction*8+'px)'},{transform:'translateY(0)'}],{duration:140,easing:'ease-out'});
+    }
+  }
+  function moveMonth(delta) {
+    if(!expanded)return;
+    const next=new Date(shown.getFullYear(),shown.getMonth()+delta,1,12);
+    if(next.getFullYear()<1000||next.getFullYear()>9999)return;
+    shown=next;renderMonth(delta);
+  }
+  function toggle(isOpen) {
+    expanded=isOpen;week.hidden=isOpen;month.hidden=!isOpen;
+    find('open').setAttribute('aria-expanded',String(isOpen));
+    strip.setAttribute('aria-expanded',String(isOpen));
+  }
+  find('open').onclick=()=>{if(enabled)onOpen();};
+  strip.onclick=()=>{if(enabled)onOpen();};
+  find('close').onclick=onClose;
+  find('prev').onclick=()=>moveMonth(-1);find('next').onclick=()=>moveMonth(1);
+  days.addEventListener('click',e=>{
+    const b=e.target.closest('button[data-day]');if(expanded&&b)onSelect(b.dataset.day);
+  });
+  host.addEventListener('keydown',e=>{
+    if(!expanded)return;
+    if(e.key==='Escape'){e.preventDefault();onClose();return;}
+    const b=e.target.closest('button[data-day]');if(!b)return;
+    if(e.key==='PageUp'||e.key==='PageDown'){
+      e.preventDefault();const n=parse(b.dataset.day).getDate();
+      moveMonth(e.key==='PageUp'?-1:1);
+      const last=new Date(shown.getFullYear(),shown.getMonth()+1,0,12).getDate();
+      const id=iso(addDays(shown,Math.min(n,last)-1));
+      days.querySelector('[data-day="'+id+'"]').focus();return;
+    }
+    const shift={ArrowLeft:-1,ArrowRight:1,ArrowUp:-7,ArrowDown:7}[e.key];if(!shift)return;
+    e.preventDefault();const d=addDays(parse(b.dataset.day),shift);
+    if(d.getFullYear()!==shown.getFullYear()||d.getMonth()!==shown.getMonth()) {shown=monthStart(d);renderMonth();}
+    days.querySelector('[data-day="'+iso(d)+'"]').focus();
+  });
+  let pointer=null,ignoreTapUntil=0;
+  host.addEventListener('pointerdown',e=>{
+    if(enabled&&e.isPrimary&&e.button===0&&(expanded||strip.contains(e.target))){
+      pointer={id:e.pointerId,x:e.clientX,y:e.clientY,expanded};
+    }
+  });
+  host.addEventListener('pointermove',e=>{
+    if(pointer?.id!==e.pointerId||Math.abs(e.clientY-pointer.y)<12)return;
+    if(Math.abs(e.clientY-pointer.y)>Math.abs(e.clientX-pointer.x)&&!host.hasPointerCapture(e.pointerId)){
+      host.setPointerCapture(e.pointerId);
+    }
+  });
+  host.addEventListener('pointercancel',()=>{pointer=null;});
+  host.addEventListener('pointerup',e=>{
+    if(pointer?.id!==e.pointerId)return;
+    const dy=e.clientY-pointer.y,dx=e.clientX-pointer.x,wasExpanded=pointer.expanded;pointer=null;
+    if(Math.abs(dy)<32||Math.abs(dy)<=Math.abs(dx))return;
+    ignoreTapUntil=performance.now()+320;
+    if(wasExpanded)moveMonth(dy<0?1:-1);
+    else if(dy>0&&enabled)onOpen();
+  });
+  host.addEventListener('click',e=>{
+    if(e.detail&&performance.now()<ignoreTapUntil){e.preventDefault();e.stopImmediatePropagation();}
+  },true);
+  let wheelSum=0, wheelLocked=false, lastWheel=-Infinity;
+  host.addEventListener('wheel',e=>{
+    if(!expanded||!enabled||e.ctrlKey||Math.abs(e.deltaY)<Math.abs(e.deltaX)||!e.deltaY)return;
+    e.preventDefault();
+    const now=performance.now();
+    if(now-lastWheel>190){wheelSum=0;wheelLocked=false;}
+    lastWheel=now;if(wheelLocked)return;
+    wheelSum+=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?240:1);
+    if(Math.abs(wheelSum)>=36){wheelLocked=true;moveMonth(wheelSum>0?1:-1);}
+  },{passive:false});
+  renderWeek();
+  return {
+    open(day,label='选择日期'){
+      if(!enabled)return;
+      selected=day;shown=monthStart(parse(day));find('field').textContent=label;
+      toggle(true);renderMonth();
+      days.querySelector('[data-day="'+day+'"]').focus({preventScroll:true});
+    },
+    close(day=selected){selected=day;toggle(false);renderWeek();},
+    setWeek(day){selected=day;renderWeek();},
+    setEnabled(value){enabled=Boolean(value);strip.disabled=!enabled;find('open').disabled=!enabled;if(!enabled&&expanded){toggle(false);renderWeek();}}
+  };
+}
+function createTimeWheel(host, onChange) {
+  const columns = [...host.querySelectorAll('[data-wheel-unit]')];
+  const limits = [23, 59];
+  const units = ['时', '分'];
+  const current = [0, 0];
+  let active = false;
+  let lastPublished = '';
+  const clamp = (index, number) => Math.min(limits[index], Math.max(0, number));
+  const valueText = () => current.map(n => String(n).padStart(2, '0')).join(':');
+  function mark(index, next) {
+    const column = columns[index];
+    column.children[current[index]].classList.remove('is-current');
+    current[index] = next;
+    column.children[next].classList.add('is-current');
+    column.setAttribute('aria-valuenow', String(next));
+    column.setAttribute('aria-valuetext', next + units[index]);
+  }
+  function readPosition(index) {
+    const column = columns[index];
+    const height = column.firstElementChild.offsetHeight;
+    if (!height) return;
+    const next = clamp(index, Math.round(column.scrollTop / height));
+    if (next !== current[index]) mark(index, next);
+  }
+  function value() {
+    if (active) columns.forEach((_, index) => readPosition(index));
+    return valueText();
+  }
+  function publish() {
+    if (!active) return;
+    const next = value();
+    if (next !== lastPublished) {
+      lastPublished = next;
+      onChange(next);
+    }
+  }
+  function align(index, next) {
+    const column = columns[index];
+    mark(index, clamp(index, next));
+    column.scrollTop = current[index] * column.firstElementChild.offsetHeight;
+  }
+  columns.forEach((column, index) => {
+    for (let n = 0; n <= limits[index]; n++) {
+      const row = document.createElement('div');
+      row.className = 'td-clock-row';
+      row.textContent = String(n).padStart(2, '0');
+      row.dataset.value = String(n);
+      row.setAttribute('aria-hidden', 'true');
+      column.append(row);
+    }
+    mark(index, 0);
+    column.addEventListener('scroll', publish, { passive: true });
+    column.addEventListener('keydown', event => {
+      if (!active) return;
+      readPosition(index);
+      const moves = {
+        ArrowUp: current[index] - 1, ArrowDown: current[index] + 1,
+        PageUp: current[index] - 5, PageDown: current[index] + 5,
+        Home: 0, End: limits[index]
+      };
+      if (!Object.hasOwn(moves, event.key)) return;
+      event.preventDefault();
+      align(index, moves[event.key]);
+      publish();
+    });
+    let drag = null;
+    let ignoreClick = false;
+    column.addEventListener('pointerdown', event => {
+      ignoreClick = false;
+      if (event.pointerType === 'mouse' && event.button === 0) {
+        drag = { id: event.pointerId, y: event.clientY, top: column.scrollTop };
+      }
+    });
+    column.addEventListener('pointermove', event => {
+      if (!drag || event.pointerId !== drag.id) return;
+      if (!event.buttons) { drag = null; return; }
+      const delta = drag.y - event.clientY;
+      if (!ignoreClick && Math.abs(delta) < 4) return;
+      if (!ignoreClick) {
+        ignoreClick = true;
+        column.dataset.dragging = '';
+        column.setPointerCapture(drag.id);
+      }
+      column.scrollTop = drag.top + delta;
+    });
+    function finishDrag(event) {
+      if (!drag || event.pointerId !== drag.id) return;
+      drag = null;
+      if (!ignoreClick) return;
+      readPosition(index);
+      delete column.dataset.dragging;
+      align(index, current[index]);
+      publish();
+    }
+    column.addEventListener('pointerup', finishDrag);
+    column.addEventListener('pointercancel', finishDrag);
+    column.addEventListener('lostpointercapture', finishDrag);
+    column.addEventListener('click', event => {
+      if (!active || ignoreClick) return;
+      const row = event.target.closest('.td-clock-row');
+      if (!row) return;
+      align(index, Number(row.dataset.value));
+      publish();
+    });
+  });
+  return {
+    open(text) {
+      const values = text.split(':').map(Number);
+      active = false;
+      columns.forEach((column, index) => {
+        delete column.dataset.dragging;
+        align(index, values[index]);
+      });
+      lastPublished = valueText();
+      active = true;
+    },
+    close() {
+      publish();
+      active = false;
+    },
+    value
+  };
+}
+  const root=document.getElementById('todone-schedule');
+  const el=Object.fromEntries([...root.querySelectorAll('[data-el]')].map(n=>[n.dataset.el,n]));
+  const tags=[{name:'📚 学习',color:'blue'},{name:'项目',color:'purple'},{name:'生活',color:'green'},{name:'急事儿',color:'red'},{name:'运动',color:'yellow'}];
+  const colors={blue:'蓝色',purple:'紫色',green:'绿色',yellow:'黄色',orange:'橙色',red:'红色'};
+  const attachments=[];
+  let selected=null;
+  const error=msg=>{el.error.textContent=msg;};
+  const timestamp=(day,time)=>Date.parse(day+'T'+time+':00');
+  function minutes(){return (timestamp(el.endDay.value,el.endTime.value)-timestamp(el.startDay.value,el.startTime.value))/60000;}
+  function duration(){
+    const m=minutes();
+    if(!Number.isFinite(m))return '';
+    if(m<=0)return '结束须晚于开始，跨日请调整结束日期。';
+    return '共 '+[Math.floor(m/60)?Math.floor(m/60)+' 小时':'',m%60?m%60+' 分钟':''].filter(Boolean).join(' ');
+  }
+  const dayFormat=new Intl.DateTimeFormat('zh-CN',{month:'numeric',day:'numeric',weekday:'short'});
+  const formatDay=value=>dayFormat.format(new Date(value+'T12:00:00'));
+  const pad=n=>String(n).padStart(2,'0');
+  const isoDay=d=>[d.getFullYear(),pad(d.getMonth()+1),pad(d.getDate())].join('-');
+  const weekDay=day=>new Date(day+'T12:00:00').getDay();
+  function shiftDay(day,n){
+    const date=new Date(day+'T12:00:00');
+    date.setDate(date.getDate()+n);
+    return isoDay(date);
+  }
+  function onOrAfterWeekday(day){
+    const d=weekDay(day);
+    return shiftDay(day,d===0?1:d===6?2:0);
+  }
+  function repetitionPreview(){
+    const enabled=el.repeat.value==='仅工作日';
+    el.repeatPreview.hidden=!enabled;
+    if(!enabled)return;
+    const start=el.startDay.value, first=onOrAfterWeekday(start);
+    const next=onOrAfterWeekday(shiftDay(first,1));
+    el.repeatPreview.textContent=first===start?'周一至周五 · 下次 '+formatDay(next):'周一至周五 · 首次 '+formatDay(first);
+  }
+  el.repeat.addEventListener('change',repetitionPreview);
+  const fieldName={start:'开始',end:'结束'};
+  let editingTime=null,editingDay=null,weekAnchor=el.startDay.value,weekField='start',spanAtOpen=60;
+  function refresh(){
+    for(const key of Object.keys(fieldName)){
+      const d=el[key+'Day'],t=el[key+'Time'];
+      d.textContent=formatDay(d.value);t.textContent=t.value;
+      d.setAttribute('aria-label',fieldName[key]+'日期 '+d.textContent);
+      t.setAttribute('aria-label',fieldName[key]+'时间 '+t.value);
+      d.setAttribute('aria-expanded',String(editingDay===key));
+      t.setAttribute('aria-expanded',String(editingTime===key));
+    }
+    el.duration.textContent=duration();el.duration.classList.toggle('err',minutes()<=0);
+    repetitionPreview();error('');
+  }
+  function preserveSpan(span){
+    if(!(span>0))return;
+    const end=new Date(timestamp(el.startDay.value,el.startTime.value)+span*60000);
+    el.endDay.value=isoDay(end);el.endTime.value=pad(end.getHours())+':'+pad(end.getMinutes());
+  }
+  const wheel=createTimeWheel(el.wheel,value=>{
+    if(!editingTime)return;
+    el[editingTime+'Time'].value=value;
+    if(editingTime==='start')preserveSpan(spanAtOpen);
+    refresh();
+  });
+  function closeClock(){
+    if(!editingTime)return;
+    wheel.close();editingTime=null;el.clockBox.hidden=true;refresh();
+  }
+  function openClock(key){
+    const wasOpen=editingTime===key;closeClock();
+    if(wasOpen)return;
+    editingTime=key;spanAtOpen=minutes();
+    el.clockTitle.textContent=fieldName[key]+'时间';
+    el[key+'Time'].closest('.time-row').after(el.clockBox);
+    el.clockBox.hidden=false;wheel.open(el[key+'Time'].value);refresh();
+    el.wheel.querySelector('[role=spinbutton]').focus({preventScroll:true});
+  }
+  el.finishTime.onclick=()=>{const key=editingTime;closeClock();el[key+'Time'].focus({preventScroll:true});};
+  el.clockBox.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();el.finishTime.click();}});
+  function closeDay(chosen){
+    const key=editingDay;if(!key)return;
+    if(chosen){
+      const span=minutes();
+      el[key+'Day'].value=chosen;
+      if(key==='start')preserveSpan(span);
+      weekAnchor=chosen;weekField=key;
+    }
+    editingDay=null;calendar.close(weekAnchor);
+    el.body.hidden=false;el.title.readOnly=false;el.save.hidden=false;
+    refresh();resizeNotes();el[key+'Day'].focus({preventScroll:true});
+  }
+  function openDay(key){
+    closeClock();editingDay=key;
+    el.title.readOnly=true;el.save.hidden=true;el.body.hidden=true;
+    calendar.open(el[key+'Day'].value,'选择'+fieldName[key]+'日期');refresh();
+  }
+  const calendar=createDraftCalendar(el.calendar,{
+    onSelect:day=>closeDay(day),onClose:()=>closeDay(null),onOpen:()=>openDay(weekField)
+  });
+  calendar.setWeek(weekAnchor);
+  for(const key of Object.keys(fieldName)){
+    const field=el[key+'Day'];let down=null;
+    field.onclick=()=>openDay(key);el[key+'Time'].onclick=()=>openClock(key);
+    field.addEventListener('pointerdown',e=>{
+      if(!e.isPrimary||e.button!==0)return;
+      down={x:e.clientX,y:e.clientY,id:e.pointerId};field.setPointerCapture(e.pointerId);
+    });
+    field.addEventListener('pointerup',e=>{
+      if(!down||down.id!==e.pointerId)return;
+      const dy=e.clientY-down.y,dx=e.clientX-down.x;down=null;
+      if(dy>30&&dy>Math.abs(dx))openDay(key);
+    });
+    field.addEventListener('pointercancel',()=>{down=null;});
+  }
+  function resizeNotes(){
+    el.notes.style.height='auto';
+    el.notes.style.height=Math.max(42,el.notes.scrollHeight)+'px';
+  }
+  el.notes.addEventListener('input',resizeNotes);
+  refresh();
+  function selectTag(tag){
+    selected=selected===tag?null:tag;
+    drawTags();
+  }
+  function drawTags(){
+    el.chips.replaceChildren();
+    const shown=tags.slice(0,3);
+    if(selected&&!shown.includes(selected))shown[2]=selected;
+    shown.forEach(tag=>{
+      const b=document.createElement('button');b.type='button';b.dataset.color=tag.color;
+      b.setAttribute('aria-pressed',String(selected===tag));b.textContent=(selected===tag?'✓ ':'')+tag.name;
+      b.onclick=()=>{selectTag(tag);el.chips.children[shown.indexOf(tag)]?.focus({preventScroll:true});};el.chips.append(b);
+    });
+  }
+  function positionTagPopup(){
+    if(el.tagPopup.hidden)return;
+    const frame=el.tagPopup.parentElement.getBoundingClientRect(),button=el.tagToggle.getBoundingClientRect();
+    const below=frame.bottom-button.bottom-12,above=button.top-frame.top-12;
+    const fullHeight=el.allTags.scrollHeight+el.createTag.offsetHeight+18;
+    const opensDown=below>=fullHeight||below>=above;
+    el.tagPopup.style.maxHeight=Math.max(50,opensDown?below:above)+'px';
+    el.tagPopup.style.left=Math.max(8,Math.min(frame.width-el.tagPopup.offsetWidth-8,button.right-frame.left-el.tagPopup.offsetWidth))+'px';
+    el.tagPopup.style.top=(opensDown?button.bottom-frame.top+4:button.top-frame.top-el.tagPopup.offsetHeight-6)+'px';
+  }
+  function closeTagPopup(restoreFocus=true){
+    el.tagPopup.hidden=true;el.tagToggle.setAttribute('aria-expanded','false');
+    if(restoreFocus)el.tagToggle.focus({preventScroll:true});
+  }
+  function showTagPopup(){
+    if(!el.tagPopup.hidden){closeTagPopup();return;}
+    closeClock();el.allTags.replaceChildren();
+    tags.forEach(tag=>{
+      const b=document.createElement('button'),dot=document.createElement('span'),label=document.createElement('span');
+      b.type='button';b.dataset.color=tag.color;b.setAttribute('aria-pressed',String(selected===tag));
+      dot.className='tag-dot';dot.setAttribute('aria-hidden','true');label.className='tag-label';label.textContent=tag.name;
+      b.append(dot,label);b.onclick=()=>{selectTag(tag);closeTagPopup();};
+      el.allTags.append(b);
+    });
+    el.tagPopup.hidden=false;el.tagToggle.setAttribute('aria-expanded','true');positionTagPopup();
+    (el.allTags.querySelector('[aria-pressed=true]')||el.allTags.firstElementChild).focus({preventScroll:true});
+  }
+  drawTags();el.tagToggle.onclick=showTagPopup;
+  document.addEventListener('pointerdown',event=>{
+    if(!el.tagPopup.hidden&&!el.tagPopup.contains(event.target)&&!el.tagToggle.contains(event.target))closeTagPopup(false);
+  });
+  el.tagPopup.addEventListener('focusout',event=>{
+    if(event.relatedTarget&&!el.tagPopup.contains(event.relatedTarget)&&event.relatedTarget!==el.tagToggle)closeTagPopup(false);
+  });
+  el.tagPopup.addEventListener('keydown',event=>{
+    if(event.key==='Escape'){event.preventDefault();closeTagPopup();}
+    if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+      event.preventDefault();const options=[...el.tagPopup.querySelectorAll('button')];
+      const index=(options.indexOf(event.target)+(event.key==='ArrowDown'?1:-1)+options.length)%options.length;
+      options[index].focus();
+    }
+  });
+  window.addEventListener('resize',positionTagPopup);
+  const paletteName='td-schedule-tag-color';
+  for(const [value,label] of Object.entries(colors)){
+    const swatch=document.createElement('label'),radio=document.createElement('input');
+    swatch.className='swatch';swatch.dataset.color=value;
+    radio.type='radio';radio.name=paletteName;radio.value=value;radio.defaultChecked=value==='blue';radio.setAttribute('aria-label',label);
+    swatch.append(radio,document.createElement('span'));el.palette.append(swatch);
+  }
+  function returnToDraft(){
+    el.tagPage.hidden=true;el.calendar.hidden=false;el.editor.hidden=false;el.tagToggle.focus({preventScroll:true});
+  }
+  el.createTag.onclick=()=>{
+    closeTagPopup(false);
+    const height=el.editor.offsetHeight+el.calendar.offsetHeight;
+    el.tagPage.style.minHeight=height+'px';
+    el.editor.hidden=true;el.calendar.hidden=true;el.tagPage.reset();el.tagError.textContent='';el.tagPage.hidden=false;
+    el.tagName.focus({preventScroll:true});
+  };
+  el.tagBack.onclick=returnToDraft;
+  el.tagPage.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();returnToDraft();}});
+  el.tagPage.onsubmit=event=>{
+    event.preventDefault();
+    const name=el.tagName.value.trim();
+    if(!name||tags.some(tag=>tag.name.normalize()===name.normalize())){
+      el.tagError.textContent=name?'这个标签名已存在。':'请输入标签名称。';el.tagName.focus();return;
+    }
+    selected={name,color:el.palette.querySelector('input:checked').value};
+    tags.push(selected);drawTags();returnToDraft();
+  };
+  el.tagName.addEventListener('input',()=>{el.tagError.textContent='';});
+  function drawAttachments(){
+    el.fileList.replaceChildren();
+    attachments.forEach((a,i)=>{
+      const li=document.createElement('li'),name=document.createElement('span'),b=document.createElement('button');
+      name.textContent=a.name;b.type='button';b.textContent='移除';b.setAttribute('aria-label','移除 '+a.name);
+      b.onclick=()=>{attachments.splice(i,1);drawAttachments();};li.append(name,b);el.fileList.append(li);
+    });
+  }
+  el.attach.onclick=()=>{el.attachmentBox.hidden=!el.attachmentBox.hidden;el.attach.setAttribute('aria-expanded',String(!el.attachmentBox.hidden));};
+  el.pick.onclick=()=>el.files.click();
+  el.files.onchange=()=>{for(const file of el.files.files)attachments.push({name:file.name,file});el.files.value='';drawAttachments();};
+  el.showUrl.onclick=()=>{el.urlBox.hidden=!el.urlBox.hidden;if(!el.urlBox.hidden)el.url.focus();};
+  el.addUrl.onclick=()=>{
+    let url;try{url=new URL(el.url.value);}catch{}
+    if(!url||!['https:','http:'].includes(url.protocol)){error('请输入完整的 http 或 https 网址。');el.url.focus();return;}
+    attachments.push({name:url.href});el.url.value='';el.urlBox.hidden=true;drawAttachments();error('');
+  };
+  el.url.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();el.addUrl.click();}});
+  el.editor.onsubmit=e=>{
+    e.preventDefault();
+    if(editingDay)return;
+    closeClock();
+    if(!el.title.value.trim()){error('请输入日程名称。');el.title.focus();return;}
+    if(!(minutes()>0)){error('请检查开始和结束日期、时间。');el.endTime.focus();return;}
+    if(el.repeat.value==='仅工作日'){
+      const span=minutes();el.startDay.value=onOrAfterWeekday(el.startDay.value);preserveSpan(span);
+      weekAnchor=el.startDay.value;weekField='start';calendar.setWeek(weekAnchor);refresh();
+    }
+    error('');el.savedDate.textContent=el.startDay.value;el.savedTitle.textContent=el.title.value.trim();
+    el.savedTime.textContent=el.startTime.value+' – '+(el.endDay.value===el.startDay.value?'':el.endDay.value+' ')+el.endTime.value+' · '+duration();
+    el.savedTag.textContent=selected?.name||'';el.slip.dataset.color=selected?.color||'';
+    const summary=[];if(el.repeat.value!=='不重复')summary.push('重复 · '+el.repeat.value+(el.repeat.value==='仅工作日'?'（'+el.repeatPreview.textContent+'）':''));
+    if(el.reminder.value!==''){
+      const remindAt=new Date(timestamp(el.startDay.value,el.startTime.value)-Number(el.reminder.value)*60000);
+      const when=remindAt.toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false});
+      summary.push('提醒 · '+el.reminder.selectedOptions[0].textContent+'（'+when+'）');
+    }
+    if(el.notes.value.trim())summary.push('备注 · '+el.notes.value.trim());
+    for(const a of attachments)summary.push('附件 · '+a.name);
+    el.summary.textContent=summary.join('\n');el.editor.hidden=true;el.result.hidden=false;calendar.setEnabled(false);el.edit.focus();
+  };
+  el.edit.onclick=()=>{el.result.hidden=true;el.editor.hidden=false;calendar.setEnabled(true);el.heading.textContent='编辑日程';resizeNotes();el.title.focus();};
+})();
+</script>
+</body>
+</html>

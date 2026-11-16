@@ -20,6 +20,7 @@ ToDone 是 HarmonyOS 原生个人事项系统。用户创建事项并选择记�
 | [数据模型](docs/data-model.md) | 实现结构与持久化 |
 | [模块系统](docs/module-system.md) | 模块行为与需求差距 |
 | [设计原则](docs/design-principles.md) | UI 设计导航 |
+| [界面开发手册](docs/ui-handbook/README.md) | 已确认的页面效果图、交互说明与原型核对样例 |
 | [服务卡片验证](docs/widget-technical-validation.md) | 卡片逐项验收 |
 
 ## 技术与目录
