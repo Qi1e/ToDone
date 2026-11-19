@@ -5,6 +5,7 @@ import { PreferencesStateStorage } from './PreferencesStateStorage';
 import { StateStorage } from './StateStorage';
 import { dateModeLabel, dateSummary, isToday } from '../common/DateFormat';
 import {
+  appendDeckExamples,
   CLUSTER_COLORS,
   createId,
   createMatter,
@@ -725,6 +726,14 @@ export class MatterStore implements MatterRepository {
 
   cardFormIds(): string[] {
     return this.state.cardFormIds.slice();
+  }
+
+  async addDeckExamples(): Promise<number> {
+    const state = this.readState();
+    const added = appendDeckExamples(state);
+    // 若上次 flush 失败，重试仍会保存当前快照，且不会重复建卡。
+    await this.commitState(state);
+    return added;
   }
 
   resetDemoData(): void {

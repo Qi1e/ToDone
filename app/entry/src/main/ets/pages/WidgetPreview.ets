@@ -1,10 +1,10 @@
 import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
+import { MatterServices } from '../application/MatterServices';
 import { Colors, Radius, Space } from '../common/Theme';
 import { SingleMatterCardView, SummaryCardView } from '../components/Cards';
 import { Matter } from '../model/Types';
 import { MatterStore } from '../store/MatterStore';
-import { refreshKnownCards } from '../widget/CardRefresh';
 
 @Entry
 @Component
@@ -13,13 +13,12 @@ struct WidgetPreview {
   @State matters: Matter[] = [];
   @State selectedSingleId: string = '';
   @State selectedSummaryIds: string[] = [];
-  @State refreshMessage: string = '';
 
   aboutToAppear(): void {
     const context = getContext(this) as common.UIAbilityContext;
     this.store.init(context);
     this.loadState();
-    refreshKnownCards(this.store);
+    MatterServices.requestCardRefresh();
   }
 
   private loadState(): void {
@@ -70,9 +69,9 @@ struct WidgetPreview {
     return this.selectedSummaryIds.includes(id);
   }
 
-  private refreshDesktopCards(): void {
-    const result = refreshKnownCards(this.store);
-    this.refreshMessage = result.message;
+  private refreshDesktopCards(action?: string): void {
+    const result = MatterServices.requestCardRefresh(action);
+    this.getUIContext().getPromptAction().showToast({ message: result.message, duration: 1500 });
   }
 
   build() {
@@ -130,7 +129,7 @@ struct WidgetPreview {
             .onClick(() => {
               this.store.setSingleCardMatter(matter.id);
               this.loadState();
-              this.refreshDesktopCards();
+              this.refreshDesktopCards('已更新单事项卡片选择');
             });
         }, (matter: Matter) => matter.id);
       }
@@ -152,7 +151,7 @@ struct WidgetPreview {
             .onClick(() => {
               this.store.toggleSummaryCardMatter(matter.id);
               this.loadState();
-              this.refreshDesktopCards();
+              this.refreshDesktopCards('已更新汇总卡片选择');
             });
         }, (matter: Matter) => matter.id);
       }
@@ -168,12 +167,6 @@ struct WidgetPreview {
           this.refreshDesktopCards();
         });
 
-      if (this.refreshMessage.length > 0) {
-        Text(this.refreshMessage)
-          .fontSize(13)
-          .fontColor(Colors.subText)
-          .width('100%');
-      }
     }
     .padding(Space.large)
     .backgroundColor(Colors.surface)

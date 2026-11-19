@@ -67,6 +67,7 @@ export struct TimelineGrid {
   @Prop @Watch('refreshLayouts') blocks: TimelineBlock[] = [];
   @Prop @Watch('focusVisibleTime') focusAt: number = 0;
   @Prop selectedId: string = '';
+  @Prop bottomInset: number = 0;
   @Prop selectedStartAt: number = 0;
   @Prop tags: TimelineTag[] = [];
   @Prop today: number = localDayStart(Date.now());
@@ -236,7 +237,8 @@ export struct TimelineGrid {
             this.dayColumn(1);
           }
           .width('100%')
-          .alignItems(VerticalAlign.Top);
+          .alignItems(VerticalAlign.Top)
+          .padding({ bottom: this.bottomInset });
         }
         .layoutWeight(1)
         .width('100%')

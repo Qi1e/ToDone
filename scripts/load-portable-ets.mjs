@@ -12,7 +12,7 @@ const sources = [
   'contracts/TimelineService', 'store/StateStorage', 'domain/TimelineReadError', 'domain/TimelineRecurrence', 'domain/TimelineReminderPlan',
   'domain/DefaultTimelineService', 'domain/TimelineLayout', 'domain/TimelineDayRing',
   'domain/CalendarAnnotation', 'domain/HomeMonthCalendar', 'domain/TimelineNoteLinks',
-  'components/TimelineBrowseMotion'
+  'components/TimelineBrowseMotion', 'components/CardStackLayout'
 ];
 
 export async function loadPortableEts() {
