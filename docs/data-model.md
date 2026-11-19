@@ -94,6 +94,8 @@ interface AppState {
 
 这样可以先验证产品闭环，避免过早引入复杂数据层。
 
+「补充示例」按四张示例事项的固定 ID 查找缺项，把新增事项和所属列表项一起写入当前快照。已有事项的排序、模块、归档状态和桌面卡片选择均沿用原值。[示例定义](../app/entry/src/main/ets/model/Defaults.ets)
+
 ## 独立时间块
 
 [TimelineBlock](../app/entry/src/main/ets/contracts/TimelineService.ets) 保存稳定 ID、标题、开始与结束时间戳（毫秒）、备注及可选的 tagId 和 repeat。每段重复规则存一条系列记录，startAt / endAt 保存用于计算重复的起始时段。标签含稳定 ID、名称（可含 emoji）和 #RRGGBB 颜色。从时间线创建的独立块单独读写，无须创建同名 Matter。原有事项快照仍使用原文件与键。

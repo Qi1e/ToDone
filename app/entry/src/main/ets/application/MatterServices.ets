@@ -26,14 +26,16 @@ export class MatterServices {
     return MatterServices.previewMode;
   }
 
-  static requestCardRefresh(): CardRefreshResult {
+  static requestCardRefresh(completedAction?: string): CardRefreshResult {
     if (MatterServices.previewMode) {
       return { requested: 0, message: '预览数据仅保存在内存中' };
     }
     try {
-      return refreshKnownCards(MatterStore.getInstance());
+      const result = refreshKnownCards(MatterStore.getInstance());
+      return completedAction ? { requested: result.requested, message: completedAction } : result;
     } catch (error) {
-      return { requested: 0, message: '卡片刷新请求未完成，请稍后重试' };
+      return { requested: 0, message: completedAction ? completedAction + '，桌面卡片刷新待重试' :
+        '卡片刷新请求未完成，请稍后重试' };
     }
   }
 }

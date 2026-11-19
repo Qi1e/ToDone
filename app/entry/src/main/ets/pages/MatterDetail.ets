@@ -1,6 +1,7 @@
 import { dateSummary } from '../common/DateFormat';
 import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
+import { MatterServices } from '../application/MatterServices';
 import { formatDateTime } from '../common/DateFormat';
 import { Colors, Radius, Space } from '../common/Theme';
 import { moduleLabel } from '../model/Defaults';
@@ -12,7 +13,6 @@ import {
   ModuleType
 } from '../model/Types';
 import { MatterStore } from '../store/MatterStore';
-import { refreshKnownCards } from '../widget/CardRefresh';
 
 interface MatterRouteParams {
   matterId?: string;
@@ -31,7 +31,6 @@ struct MatterDetail {
   @State checklistInput: string = '';
   @State changedTick: number = 0;
   @State enabledModuleSnapshot: ModuleInstance[] = [];
-  @State feedbackText: string = '';
 
   aboutToAppear(): void {
     const context = getContext(this) as common.UIAbilityContext;
@@ -65,9 +64,9 @@ struct MatterDetail {
     this.changedTick++;
   }
 
-  private refreshCards(prefix: string): void {
-    const result = refreshKnownCards(this.store);
-    this.feedbackText = `${prefix}。${result.message}`;
+  private refreshCards(action: string): void {
+    const result = MatterServices.requestCardRefresh(action);
+    this.getUIContext().getPromptAction().showToast({ message: result.message, duration: 1500 });
   }
 
   private hasCurrentMatter(): boolean {
@@ -99,7 +98,6 @@ struct MatterDetail {
             Button('编辑事项').onClick(() => {
               router.pushUrl({ url: 'pages/CreateMatter', params: { matterId: this.matterId } });
             })
-            this.FeedbackText();
             this.EnabledModules();
           } else {
             Text('没有找到这个事项')
@@ -117,17 +115,6 @@ struct MatterDetail {
     }
     .title(this.titleInput.length > 0 ? this.titleInput : '事项')
     .mode(NavigationMode.Stack);
-  }
-
-  @Builder
-  private FeedbackText() {
-    if (this.feedbackText.length > 0) {
-      Text(this.feedbackText)
-        .fontSize(13)
-        .fontColor(Colors.subText)
-        .width('100%')
-        .padding({ left: Space.small, right: Space.small });
-    }
   }
 
   @Builder

@@ -54,7 +54,17 @@ node scripts/verify.mjs --build
 - 存储变化：创建/修改测试事项，结束进程再打开检查数据；使用测试数据，涉及迁移先确认恢复方式。
 - 排序/弱关联变化：操作前后核对列表顺序，再重启检查。
 - 卡片变化：按 [卡片清单](widget-technical-validation.md) 更新对应结果。
-- 已有 [MatterStore Hypium 测试](../app/entry/src/ohosTest/ets/test/MatterStore.test.ets)，本次未运行；仍需核实测试入口并在设备执行。不要把 Node 脚本检查等同于 ArkTS 测试。
+- 本地 Hypium 和设备侧 `ohosTest` 共用同一个[套件入口](../app/entry/src/ohosTest/ets/test/List.test.ets)，覆盖事项操作、翻页遮挡和末尾回弹。触控手感仍需在设备上核对。
+
+## 运行本地 Hypium
+
+用 DevEco 打开 `app/`，安装锁文件中已有的依赖（`ohpm install`）。创建 Hvigor 运行配置，将工作目录设为 `app/`，使用下列参数运行本地套件。
+
+```text
+--mode module -p module=entry@default -p product=default -p pageType=page -p isLocalTest=true -p unitTestMode=true -p buildRoot=.test -p unit.test.replace.page=../../../.test/testability/pages/Index test --no-daemon
+```
+
+逐项结果和通过数见 `app/entry/.test/default/intermediates/test/coverage_data/test_result.txt`。设备上的 Instrument Test 需另行运行。
 
 ## 2026-09-20 合并验证
 

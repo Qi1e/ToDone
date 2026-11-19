@@ -12,7 +12,7 @@ export function refreshKnownCards(store: MatterStore): CardRefreshResult {
   if (formIds.length === 0) {
     return {
       requested: 0,
-      message: '设置已保存；添加或刷新桌面卡片后生效'
+      message: '请先添加桌面卡片'
     };
   }
 

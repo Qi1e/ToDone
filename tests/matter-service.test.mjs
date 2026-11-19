@@ -5,6 +5,7 @@ import { loadPortableEts } from '../scripts/load-portable-ets.mjs';
 const bundle = await loadPortableEts();
 after(() => bundle.close());
 const { ModuleType } = bundle.modules['model/Types'];
+const { appendDeckExamples, createSeedState } = bundle.modules['model/Defaults'];
 const { DefaultMatterService } = bundle.modules['domain/DefaultMatterService'];
 const { MockMatterService, MemoryMatterRepository } = bundle.modules['mocks/MockMatterService'];
 const { canLinkMatterInState } = bundle.modules['domain/MatterLinks'];
@@ -18,6 +19,33 @@ function fixture() {
   return { repository, service: new DefaultMatterService(repository) };
 }
 const request = (title, extra = {}) => ({ intent: { title, ...extra } });
+
+test('新演示有七张卡，补充到已有清单只追加四张，不改变原顺序、关联或桌面选择', () => {
+  const seed = createSeedState();
+  const samples = seed.matters.slice(3);
+  assert.deepEqual(samples.map(m => m.title), ['课程汇报', '听力跟读', '周末采购', '摄影散步']);
+  assert.deepEqual(seed.summaryCardMatterIds, seed.matters.slice(0, 3).map(m => m.id));
+  const state = structuredClone(seed);
+  state.matters = state.matters.slice(0, 3).reverse();
+  state.matters[0].orderIndex = 12;
+  state.checklistItems = state.checklistItems.filter(i => !samples.some(m => m.id === i.matterId));
+  const prior = structuredClone(state);
+  assert.equal(appendDeckExamples(state), 4);
+  assert.deepEqual(state.matters.slice(0, 3), prior.matters);
+  assert.deepEqual(state.matters.slice(3).map(m => m.orderIndex), [13, 14, 15, 16]);
+  assert.deepEqual(state.checklistItems.slice(0, prior.checklistItems.length), prior.checklistItems);
+  for (const name of ['clusters', 'eventRecords', 'counterEntries', 'singleCardMatterId', 'summaryCardMatterIds', 'cardFormIds']) {
+    assert.deepEqual(state[name], prior[name]);
+  }
+  const groceries = state.matters.find(m => m.title === '周末采购');
+  assert.deepEqual(state.checklistItems.filter(i => i.matterId === groceries.id).map(i => i.title), ['燕麦', '牛奶', '洗衣液']);
+  assert.ok(state.matters.every(m => m.enabledModules.every(module => module.matterId === m.id)));
+  groceries.title = '我自己的采购清单';
+  groceries.archived = true;
+  const edited = structuredClone(state);
+  assert.equal(appendDeckExamples(state), 0);
+  assert.deepEqual(state, edited);
+});
 
 test('只填名称也能创建；返回数据与仓库快照互不污染', async () => {
   const { service, repository } = fixture();

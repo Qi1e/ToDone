@@ -95,10 +95,10 @@ export function createModuleInstance(matterId: string, type: ModuleType): Module
   };
 }
 
-export function createMatter(intent: CreateMatterIntent, orderIndex: number): Matter {
+export function createMatter(intent: CreateMatterIntent, orderIndex: number, id: string = createId('matter')): Matter {
   const now = Date.now();
   const matter: Matter = {
-    id: createId('matter'),
+    id,
     title: intent.title.trim(),
     description: intent.description?.trim(),
     createdAt: now,
@@ -140,6 +140,42 @@ export function createMatter(intent: CreateMatterIntent, orderIndex: number): Ma
   }
 
   return matter;
+}
+
+interface DeckExample {
+  id: string;
+  intent: CreateMatterIntent;
+  items?: string[];
+}
+
+// 固定的示例 ID 只用于按需补齐，改名、排序或归档后仍能认出原卡。
+export function appendDeckExamples(state: AppState): number {
+  const due = new Date();
+  due.setDate(due.getDate() + 3);
+  const examples: DeckExample[] = [
+    { id: 'sample_presentation', intent: { title: '课程汇报', description: '准备五分钟讲稿和两张对比图',
+      enabledModuleTypes: [ModuleType.Deadline, ModuleType.Checklist, ModuleType.Note],
+      deadlineTimestamp: due.getTime(), note: '先讲问题，再放两张对比图。' }, items: ['核对图表', '计时试讲'] },
+    { id: 'sample_listening', intent: { title: '听力跟读', description: '午休听一段材料，跟读两遍',
+      enabledModuleTypes: [ModuleType.EventRecord, ModuleType.Counter] } },
+    { id: 'sample_groceries', intent: { title: '周末采购', description: '去超市前看一眼清单',
+      enabledModuleTypes: [ModuleType.Checklist] }, items: ['燕麦', '牛奶', '洗衣液'] },
+    { id: 'sample_photowalk', intent: { title: '摄影散步', description: '沿河走到人行桥，记录日落的机位',
+      enabledModuleTypes: [ModuleType.EventRecord, ModuleType.Note], note: '从西门出发，日落前到桥边。' } }
+  ];
+  const next = state.matters.reduce((max: number, matter: Matter) => Math.max(max, matter.orderIndex), -1) + 1;
+  let added = 0;
+  examples.forEach((example: DeckExample) => {
+    if (state.matters.some((matter: Matter) => matter.id === example.id)) return;
+    const matter = createMatter(example.intent, next + added, example.id);
+    state.matters.push(matter);
+    example.items?.forEach((title: string, index: number) => {
+      state.checklistItems.push({ id: createId('check'), matterId: matter.id, title, completed: false,
+        entryType: 'text', orderIndex: index, createdAt: matter.createdAt, updatedAt: matter.createdAt });
+    });
+    added++;
+  });
+  return added;
 }
 
 export function createSeedState(): AppState {
@@ -204,7 +240,7 @@ export function createSeedState(): AppState {
     }
   ];
 
-  return {
+  const state: AppState = {
     matters: [fitness, exam, bookList],
     clusters: [cluster],
     eventRecords: [],
@@ -214,4 +250,6 @@ export function createSeedState(): AppState {
     summaryCardMatterIds: [fitness.id, exam.id, bookList.id],
     cardFormIds: []
   };
+  appendDeckExamples(state);
+  return state;
 }

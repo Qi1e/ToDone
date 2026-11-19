@@ -20,6 +20,7 @@ export struct TimelineBrowseDates {
   @Link month: number;
   @Link @Watch('settle') level: number;
   @Prop readError: string = '';
+  @Prop showScheduleRings: boolean = true;
   onRetry: () => void = () => {};
   @Prop today: number;
   @Prop @Watch('refreshPreview') blocks: TimelineBlock[] = [];
@@ -244,6 +245,7 @@ export struct TimelineBrowseDates {
       Column() {
         TimelineBrowseCalendar({
           day: this.day, today: this.today, blocks: this.blocks, tags: this.tags, rowsScroller: this.calendarScroll,
+          showScheduleRings: this.showScheduleRings,
           progress: Math.min(1, this.progress), detail: this.detail(), expanded: this.level > 0 || this.progress >= 1,
           month: this.month, rowHeight: this.rowHeight(), fullRowHeight: this.fullRowHeight(),
           maxRowsHeight: this.sizes.rowHeight + (this.sizes.calendarLimit - this.sizes.closedHeight) * Math.min(1, this.progress) +

@@ -85,7 +85,7 @@ export struct TimelineDayNumber {
 
   build() {
     Stack({ alignContent: Alignment.Center }) {
-      if (this.ring.count > 0) {
+      if (this.ringFraction > 0 && this.ring.count > 0) {
         DateRingCanvas({ arcs: this.ring.arcs, fraction: this.ringFraction });
       }
       Text(new Date(this.day).getDate().toString())
@@ -110,6 +110,7 @@ export struct TimelineMonthDay {
   @Prop today: number;
   @Prop muted: boolean = false;
   @Prop prepareDetail: boolean = false;
+  @Prop showScheduleRings: boolean = true;
   @Prop detail: number = 0;
   @Prop rowHeight: number = ROW_HEIGHT;
   @Prop fullRowHeight: number = ROW_HEIGHT;
@@ -140,7 +141,7 @@ export struct TimelineMonthDay {
         Row() {
           TimelineDayNumber({ day: this.cell.day, today: this.today, muted: this.muted,
             selected: formatDate(this.cell.day) === formatDate(this.day), ring: this.cell.ring,
-            ringFraction: 1 - this.detail });
+            ringFraction: this.showScheduleRings ? 1 - this.detail : 0 });
         }.width('100%').height(RING_SIZE).justifyContent(FlexAlign.Center).position({ x: 0, y: this.dateTop() });
         if (this.prepareDetail || this.detail > 0) {
           if (this.cell.entries.length > this.visibleCount()) {
@@ -186,6 +187,7 @@ export struct TimelineCalendarRows {
   @Prop rowHeight: number = ROW_HEIGHT;
   @Prop detailedCalendar: boolean = false;
   @Prop prepareDetail: boolean = false;
+  @Prop showScheduleRings: boolean = true;
   @Prop detail: number = 0;
   @Prop fullRowHeight: number = ROW_HEIGHT;
   @Prop @Watch('refreshRows') blocks: TimelineBlock[] = [];
@@ -226,6 +228,7 @@ export struct TimelineCalendarRows {
     Row() {
       ForEach(days, (cell: HomeCalendarDay) => {
         TimelineMonthDay({ cell: cell, day: this.day, today: this.today, detail: this.detail, prepareDetail: this.prepareDetail,
+          showScheduleRings: this.showScheduleRings,
           rowHeight: this.rowHeight, fullRowHeight: this.fullRowHeight, muted: this.expanded && monthStart(cell.day) !== this.month,
           onPick: (day: number) => this.onPick(day) }).layoutWeight(1);
       }, (cell: HomeCalendarDay) => cell.day.toString());

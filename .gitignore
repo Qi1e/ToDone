@@ -1,6 +1,7 @@
 .hvigor/
 .idea/
 .preview/
+.test/
 .DS_Store
 *.iml
 *.log
