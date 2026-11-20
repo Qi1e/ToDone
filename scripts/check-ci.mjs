@@ -17,6 +17,6 @@ run(['scripts/check-docs.mjs']);
 for (const file of fs.readdirSync(path.join(root, 'scripts')).filter(file => file.endsWith('.mjs'))) {
   run(['--check', `scripts/${file}`]);
 }
-run(['--test', 'tests/matter-service.test.mjs', 'tests/timeline.test.mjs', 'tests/calendar-annotation.test.mjs', 'tests/timeline-tags.test.mjs', 'tests/timeline-ring.test.mjs',
+run(['--test', 'tests/matter-service.test.mjs', 'tests/matter-transactions.test.mjs', 'tests/timeline.test.mjs', 'tests/calendar-annotation.test.mjs', 'tests/timeline-tags.test.mjs', 'tests/timeline-ring.test.mjs',
   'tests/timeline-recurrence.test.mjs', 'tests/timeline-metadata.test.mjs', 'tests/timeline-reminders.test.mjs', 'tests/timeline-note-links.test.mjs', 'tests/card-stack.test.mjs']);
 console.log('可移植检查通过；不代表 ArkTS 编译、Hypium 或实机验收通过。');

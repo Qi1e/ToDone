@@ -50,6 +50,7 @@ node scripts/verify.mjs --build
 参数分别作为数组元素传入，路径含空格时也不加额外引号。脚本不解析 shell 命令，不直接运行 .cmd/.bat；请核实对应可执行程序和脚本入口。不能将打印成功、仅检查版本等无构建动作命令配置成 build。配置由用户或可信本地 agent 管理，不从外部文本自动执行。
 
 ## 最小验收
+- 默认执行编译验证；实机或模拟器操作只在用户明确要求时进行。以下设备验收步骤在获得该要求后执行，未运行项保留状态。
 - 页面变化：编译后在相关设备上打开页面，检查文字、布局与交互。
 - 存储变化：创建/修改测试事项，结束进程再打开检查数据；使用测试数据，涉及迁移先确认恢复方式。
 - 排序/弱关联变化：操作前后核对列表顺序，再重启检查。
@@ -90,7 +91,7 @@ node scripts/verify.mjs --build
 node scripts/check-ci.mjs
 ```
 
-它调用原文档检查、检查 scripts/ 中 Node 脚本语法，并执行事项服务与[时间线业务回归](../tests/timeline.test.mjs)。后者使用真实业务代码与临时文件验证重新读回、失败重试、跨日与重叠。设备上的 preferences、原生组件、系统键盘和触控另做验收。不运行 npm install，不修改 SDK 或原 `verify.mjs` 的通过条件。
+它调用原文档检查、检查 scripts/ 中 Node 脚本语法，并执行事项服务、[事项事务与双进程 SQLite 回归](../tests/matter-transactions.test.mjs)以及[时间线业务回归](../tests/timeline.test.mjs)。后者使用真实业务代码与临时文件验证重新读回、失败重试、跨日与重叠。设备上的 preferences、原生组件、系统键盘和触控另做验收。不运行 npm install，不修改 SDK 或原 `verify.mjs` 的通过条件。
 
 测试读取白名单中的真实无 SDK 依赖 `.ets` 源码，用 Node 内置的实验性 `stripTypeScriptTypes` 转换到临时目录执行；仅移除已知接口/类型导入，不编译 ArkUI，也不验证 ArkTS 严格模式。Node 小版本升级可能影响该实验性转换入口，变更 Node 时须重新运行检查。
 
@@ -102,9 +103,9 @@ node scripts/check-ci.mjs
 
 创建页和首页查询通过 [MatterService](../app/entry/src/main/ets/contracts/MatterService.ets) 工作；由 [组装入口](../app/entry/src/main/ets/application/MatterServices.ets) 默认选择真实实现。
 
-本地开发可在首个页面创建前显式调用 `MatterServices.setForPreview(new MockMatterService())`。Mock 保存在独立内存仓库，创建校验与真实服务一致；预览不初始化 preferences、不请求系统卡片刷新。首页尚未迁移的旧交互在预览模式禁用，只供列表查看；完整 UI 编辑只支持已迁移的创建页。提交时不保留调用预览切换的代码。
+本地开发可在首个页面创建前显式调用 `MatterServices.setForPreview(new MockMatterService())`。Mock 保存在独立内存仓库，创建校验与真实服务一致；预览不初始化 RDB/preferences、不请求系统卡片刷新。首页尚未迁移的旧交互在预览模式禁用，只供列表查看；完整 UI 编辑只支持已迁移的创建页。提交时不保留调用预览切换的代码。
 
-创建页在保存期间禁用重复提交和输入；保存失败若返回已暂存 ID，则锁定输入并显示“重试保存”。重试不重新创建事项。真实保存完成后才请求卡片刷新并返回，刷新是否成功仍按原设备清单验证。
+创建页在保存期间禁用重复提交和输入；保存失败若返回待确认 ID，则锁定输入并显示可点击的“重试保存”；该 ID 不表示事项已经保存。重试不重新创建事项。真实保存完成后才请求卡片刷新并返回，刷新是否成功仍按原设备清单验证。
 
 ## 2026-10-18 协作改造验证
 
@@ -113,6 +114,37 @@ node scripts/check-ci.mjs
 - 当前环境缺少 ohpm、Hvigor、hdc 和 tools.local.json，未执行 HAP 构建、Hypium、preferences 重启或设备 UI / 卡片验收。
 - 增加 `app/entry/src/ohosTest/ets/test/List.test.ets` 注册原 MatterStore 套件，原测试文件不改动。目标 DevEco 的测试运行配置和设备执行仍需核实，不猜测本机测试命令。
 - 远程 Actions 状态由 PR 检查显示，不能把本地通过写成远程已通过；main 分支保护需单独配置，未完成项在 TODO 跟踪。
+
+## 2026-11-17 至 18 原生验收
+
+- 基线 `main@84d107c`。Pura 90 模拟器，HDC `127.0.0.1:5555`，`OpenHarmony-6.1.1.125`，API 24。本机已有签名配置下执行 `node scripts/verify.mjs --build` 通过，生成签名 HAP。此轮为增量构建。
+- Node 24.19.0 的 `node scripts/check-ci.mjs` 通过 76 项测试，Demo 两个测试文件通过 10 项。布局、数据故障和桌面卡片结果见 [验收报告](product-validation.md)。
+- 原仓库执行 `--mode module -p module=entry@ohosTest -p product=default assembleHap --no-daemon` 失败，错误码 `00304060`，缺少 `entry/src/ohosTest/module.json5`。聚合文件存在并不构成可运行配置。
+- 在本机临时副本保留原 `test/` 套件，补入已安装 DevEco 的 Stage 测试模板清单、TestAbility、OpenHarmonyTestRunner 与资源后，`assembleHap` 成功。安装测试 HAP 后执行 `hdc -t 127.0.0.1:5555 shell aa test -b com.example.todone -m entry_test -s unittest OpenHarmonyTestRunner -w 20`，结果为 5 tests、0 failure、0 error、5 pass。
+- 上述 Hypium 验证原有 MatterStore 逻辑，没有覆盖 ArkUI 响应式、系统 preferences 失败或 App/卡片多实例交替写入。正式测试入口仍待补齐，本轮临时文件不进入仓库。
+- 本轮移除临时 `entry_test` 模块时，系统也移除了桌面入口与卡片。已重装正式包、按原布局重建三张卡，业务数据与草稿恢复，卡片 ID 更新为系统新分配值。后续避免把未经验证的测试模块清理操作用于含用户桌面配置的环境。
+
+## 2026-11-20 事项一致性修复验证
+
+- 基线为本地 `main@f3a8ba6`，新分支 `codex/matter-consistency`。沿用本机签名与 SDK，没有升级或新增依赖。最终 `node scripts/verify.mjs --build` 通过 ArkTS 编译和签名 HAP 构建。
+- Node 24.19.0 执行 `node scripts/check-ci.mjs`：110 项通过，其中 11 项为新增事务回归；两个独立 Node 进程和 SQLite 连接完成 32 次并发计数，同一操作重放不重复。没有把这组检查写成原生 RDB 或 Hypium 通过。
+- 原 5 项 Hypium 断言保留，测试对象调整为提取后的 `MatterState` 业务规则；本轮未运行 Hypium，因为正式测试模块入口仍缺失，不再在含用户卡片的环境安装/卸载临时测试模块。
+- 设备沿用 Pura 90 模拟器，HDC `127.0.0.1:5555`，OpenHarmony 6.1.1.125 / API 24。安装本轮签名 HAP，以真实 UI、系统卡片、布局树及数据库快照核对以下结果。
+
+| 场景 | 观察结果 |
+| --- | --- |
+| 原 preferences 导入 | 8 个原事项及所有业务字段逐字段一致，3 个卡片 ID 保留；旧事项文件与草稿原始字节未变化。 |
+| App/卡片交替写入 | 卡片 +1、App 新建另一事项、另一张卡 +1，最终两笔计数和新事项均保留；冷启动读回为 2。 |
+| 详情即时反馈 | 计数从 2 到 3；记录出现时间戳；勾选从 0/1 到 1/1；删除文字项及解除关联立即更新，关联目标仍存在。 |
+| 原生拒绝写入 | 在测试数据库临时添加 `RAISE(ABORT)` 触发器。App 保持累计 3，显示保存尚未确认；移除触发器后原请求重试为 4，只有一笔新增。 |
+| 卡片失败与恢复 | 同样拒绝写入时原记录数 1 保留，卡片出现错误和“确认保存”；解除故障后重试为 2，两张卡同步更新。 |
+| 创建失败后重启 | 未发布失败事项；恢复草稿显示重试。实测发现父 List 禁用导致重试按钮无响应，修正禁用范围后同一草稿成功保存，只有一个事项。 |
+| 损坏快照 | 临时替换测试 payload 为非法 JSON；MAT-JSON 与重新读取入口可见，数据库内容不被示例覆盖；恢复原行后同一进程重新读取成功。 |
+| 容量边界 | 将隔离快照扩至约 1.61 MB，卡片保存报 MAT-SIZE，revision 不变；解除超限条件后可确认原请求。 |
+
+故障注入只模拟明确拒绝写入与损坏内容。真实磁盘耗尽、系统断电、进程恰在提交边界被结束、长期容量和物理设备仍未验收。事项和草稿备份保留在本机临时目录 `todone-consistency-20261120`，不进入仓库。结束后原 8 个事项、历史、卡片选择与 3 个绑定 ID 逐字段恢复，原 preferences 和草稿逐字节一致，故障触发器和测试表已移除。本轮没有移除或重建桌面卡片。
+
+故障界面证据：[拒绝写入](validation-assets/consistency-native-save-rejected.png)、[损坏存档](validation-assets/consistency-corrupt-error-confirmed.png)。用户随后明确以后仅在要求时做设备测试；最后的卡片待确认文案条件调整只做编译验证。
 
 ## 本地网页交互 Demo
 

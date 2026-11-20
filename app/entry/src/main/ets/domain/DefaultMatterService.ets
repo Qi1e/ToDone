@@ -4,9 +4,17 @@ import { CreateMatterRequest, CreateMatterResult, MatterRepository, MatterServic
 import { createId, createMatter, createModuleInstance } from '../model/Defaults';
 import { AppState, ChecklistItem, Matter, ModuleInstance, ModuleType } from '../model/Types';
 import { canLinkMatterInState } from './MatterLinks';
+import { MatterOperation } from '../contracts/MatterPersistence';
+import { MatterDataError, matterErrorMessage } from './MatterSnapshot';
+
+interface PendingMatterSave {
+  operation: MatterOperation;
+  apply: (state: AppState) => string;
+}
 
 export class DefaultMatterService implements MatterService {
   private repository: MatterRepository;
+  private pending: Map<string, PendingMatterSave> = new Map();
 
   constructor(repository: MatterRepository) {
     this.repository = repository;
@@ -35,13 +43,18 @@ export class DefaultMatterService implements MatterService {
   }
 
   async saveEditor(draft: EditorDraft, ownerId: string): Promise<CreateMatterResult> {
-    const state = this.repository.readState();
-    if (draft.token && state.matters.some((m: Matter) => m.id === draft.id && m.lastEditorToken === draft.token)) {
-      return this.persist(state, draft.id);
-    }
-    const error = applyEditor(state, draft, ownerId);
-    if (error) return this.failure('invalid_editor', error);
-    return this.persist(state, draft.id);
+    if (!draft.token) draft.token = createId('save');
+    const frozen = JSON.parse(JSON.stringify(draft)) as EditorDraft;
+    const operation: MatterOperation = { id: frozen.token, fingerprint: 'editor:' + JSON.stringify([frozen, ownerId]) };
+    return this.persist(frozen.id, { operation, apply: (state: AppState): string => {
+      // 兼容旧版已保存 token 的草稿，后续重复请求由持久化回执识别。
+      if (state.matters.some((matter: Matter) => matter.id === frozen.id && matter.lastEditorToken === frozen.token)) {
+        return frozen.id;
+      }
+      const error = applyEditor(state, frozen, ownerId);
+      if (error) throw new MatterDataError('invalid_editor', error);
+      return frozen.id;
+    } });
   }
 
   activeMatters(): Matter[] {
@@ -80,26 +93,35 @@ export class DefaultMatterService implements MatterService {
       return this.failure('invalid_checklist', '添加列表项前请启用列表信息');
     }
 
-    const state = this.repository.readState();
-    const matter = createMatter(intent, state.matters.length);
-    state.matters.push(matter);
-    const ownerId = request.ownerMatterId ?? '';
-    if (ownerId.length > 0) {
-      if (!canLinkMatterInState(state, ownerId, matter.id)) {
-        return this.failure('invalid_owner', '原列表已不可用，请返回后重新选择');
+    const frozen = JSON.parse(JSON.stringify(request)) as CreateMatterRequest;
+    const matter = createMatter(frozen.intent, 0);
+    const operation: MatterOperation = { id: createId('create'), fingerprint: 'create:' + JSON.stringify(frozen) };
+    return this.persist(matter.id, { operation, apply: (state: AppState): string => {
+      const created = JSON.parse(JSON.stringify(matter)) as Matter;
+      created.orderIndex = state.matters.length;
+      state.matters.push(created);
+      const ownerId = frozen.ownerMatterId ?? '';
+      if (ownerId.length > 0) {
+        if (!canLinkMatterInState(state, ownerId, matter.id)) {
+          throw new MatterDataError('invalid_owner', '原列表已不可用，请返回后重新选择');
+        }
+        this.appendItem(state, ownerId, matter.title, matter.id);
       }
-      this.appendItem(state, ownerId, matter.title, matter.id);
-    }
-    titles.forEach((title: string) => this.appendItem(state, matter.id, title));
-    return this.persist(state, matter.id);
+      titles.forEach((title: string) => this.appendItem(state, matter.id, title));
+      return matter.id;
+    } });
   }
 
   async retrySave(matterId: string): Promise<CreateMatterResult> {
-    const state = this.repository.readState();
-    if (!state.matters.some((matter: Matter) => matter.id === matterId)) {
+    const pending = this.pending.get(matterId);
+    if (pending) return this.persist(matterId, pending);
+    try {
+      await this.repository.reload();
+      if (this.findMatter(matterId)) return { success: true, matterId, errorCode: '', message: '事项已保存' };
       return this.failure('missing_matter', '事项已不存在，请返回首页确认');
+    } catch (error) {
+      return { success: false, matterId, errorCode: 'save_failed', message: matterErrorMessage(error as Error) };
     }
-    return this.persist(state, matterId);
   }
 
   private appendItem(state: AppState, ownerId: string, title: string, targetId?: string): void {
@@ -117,18 +139,18 @@ export class DefaultMatterService implements MatterService {
     });
   }
 
-  private async persist(state: AppState, matterId: string): Promise<CreateMatterResult> {
+  private async persist(matterId: string, pending: PendingMatterSave): Promise<CreateMatterResult> {
+    this.pending.set(matterId, pending);
     try {
-      await this.repository.commitState(state);
-      return { success: true, matterId, errorCode: '', message: '事项已保存' };
+      const savedId = await this.repository.transact(pending.operation, pending.apply);
+      this.pending.delete(matterId);
+      return { success: true, matterId: savedId, errorCode: '', message: '事项已保存' };
     } catch (error) {
-      const retained = this.findMatter(matterId) !== undefined;
-      return {
-        success: false,
-        matterId: retained ? matterId : '',
-        errorCode: 'save_failed',
-        message: retained ? '事项已暂存，但保存未确认。请重试保存，勿重复创建。' : '无法保存事项，请检查存储后重试。'
-      };
+      if (error instanceof MatterDataError && error.code.startsWith('invalid_')) {
+        this.pending.delete(matterId);
+        return this.failure(error.code, error.message);
+      }
+      return { success: false, matterId, errorCode: 'save_failed', message: matterErrorMessage(error as Error) };
     }
   }
 

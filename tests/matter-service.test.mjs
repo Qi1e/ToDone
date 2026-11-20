@@ -104,18 +104,19 @@ test('归档或没有列表能力的主事项不能接收新引用', async () =>
   assert.equal((await service.createMatter({ ...request('子项'), ownerMatterId: owner.matterId })).success, false);
   const state = repository.readState();
   state.matters[0].archived = true;
-  await repository.commitState(state);
+  await repository.transact({ id: 'fixture-update', fingerprint: JSON.stringify(state) }, current => Object.assign(current, state));
   assert.equal(service.activeMatters().length, 0);
   assert.equal(service.archivedMatters().length, 1);
   assert.equal((await service.createMatter({ ...request('子项'), ownerMatterId: owner.matterId })).success, false);
 });
 
-test('保存失败后重试同一事项，不重复创建或重复添加列表项', async () => {
+test('提交响应丢失后重试同一事项，不重复创建或重复添加列表项', async () => {
   class FailingRepository extends MemoryMatterRepository {
     failures = 1;
-    async commitState(state) {
-      await super.commitState(state);
-      if (this.failures-- > 0) throw new Error('模拟 flush 失败');
+    async transact(operation, change) {
+      const result = await super.transact(operation, change);
+      if (this.failures-- > 0) throw new Error('模拟提交响应丢失');
+      return result;
     }
   }
   const repository = new FailingRepository(emptyState());
@@ -133,10 +134,10 @@ test('保存失败后重试同一事项，不重复创建或重复添加列表�
 
 test('写入开始前失败不会虚构已创建的事项', async () => {
   const repository = new MemoryMatterRepository(emptyState());
-  repository.commitState = async () => { throw new Error('存储不可用'); };
+  repository.transact = async () => { throw new Error('存储不可用'); };
   const service = new DefaultMatterService(repository);
   const failed = await service.createMatter(request('失败'));
-  assert.equal(failed.matterId, '');
+  assert.ok(failed.matterId, '待保存请求保留稳定 ID，查询列表仍只有已提交事项');
   assert.equal(service.activeMatters().length, 0);
 });
 
@@ -192,7 +193,7 @@ test('编辑保留计数、记录、列表完成状态和隐藏配置；解除�
   state.checklistItems[0].completed = true;
   state.counterEntries.push({ id: 'count', matterId: draft.id, value: 5, timestamp: 42 });
   state.eventRecords.push({ id: 'record', matterId: draft.id, timestamp: 42 });
-  await repository.commitState(state);
+  await repository.transact({ id: 'fixture-update', fingerprint: JSON.stringify(state) }, current => Object.assign(current, state));
   edit.title = '新名称';
   edit.types = [ModuleType.Checklist];
   edit.items = [{ id: 'item', title: '新文字' }];
@@ -231,12 +232,13 @@ test('旧编辑草稿、无效引用或计数均不覆盖原事项', async () =>
   assert.deepEqual(repository.readState(), baseline);
 });
 
-test('共享表单 flush 失败后用恢复的草稿重试', async () => {
+test('共享表单提交响应丢失后用恢复的草稿重试', async () => {
   class FailOnce extends MemoryMatterRepository {
     fail = true;
-    async commitState(state) {
-      await super.commitState(state);
-      if (this.fail) { this.fail = false; throw new Error('flush'); }
+    async transact(operation, change) {
+      const result = await super.transact(operation, change);
+      if (this.fail) { this.fail = false; throw new Error('提交响应丢失'); }
+      return result;
     }
   }
   const service = new DefaultMatterService(new FailOnce(emptyState()));

@@ -19,6 +19,8 @@ import { localDayStart, timelineBlocksForDay } from '../domain/TimelineLayout';
 import { firstVisibleTimelineOccurrence } from '../domain/TimelineRecurrence';
 
 import { MatterServices } from '../application/MatterServices';
+import { MatterStore } from '../store/MatterStore';
+import { matterErrorMessage } from '../domain/MatterSnapshot';
 import { MatterCardDeck } from './MatterCardDeck';
 import { HomeDock, HomeGlyph, HomeIcon, HomeTab, DOCK_CLEARANCE, DOCK_MARGIN } from './HomeNavigation';
 
@@ -77,8 +79,8 @@ export struct HomeScreen {
     this.pageActive = true;
     this.tab = this.initialTab;
     this.registerBack(() => this.handleBack());
-    MatterServices.initialize(getContext(this) as common.UIAbilityContext);
-    MatterServices.requestCardRefresh();
+    this.unsubscribeMatters = MatterStore.getInstance().subscribe(() => { this.matterRevision++; });
+    this.loadMatters();
     try {
       const route = this.initialTab === HomeTab.Timeline ? router.getParams() as HomeCalendarRoute | undefined : undefined;
       if (route && typeof route.day === 'number' && Number.isFinite(new Date(route.day).getTime())) {
@@ -93,6 +95,7 @@ export struct HomeScreen {
   }
 
   aboutToDisappear(): void {
+    this.unsubscribeMatters?.();
     this.pageActive = false;
     this.registerBack(() => false);
     if (!this.saving && this.tab === HomeTab.Timeline) this.finishAttachments();
@@ -102,11 +105,29 @@ export struct HomeScreen {
   private foregroundChanged(): void {
     if (!this.pageActive) return;
     if (this.foreground) {
-      this.matterRevision++;
+      this.loadMatters();
       this.load();
       this.refreshToday();
     } else {
       this.stopMidnightTimer();
+    }
+  }
+
+  @State private matterLoading: boolean = true;
+  @State private matterReadError: string = '';
+  private unsubscribeMatters?: () => void;
+
+  private async loadMatters(): Promise<void> {
+    this.matterLoading = true;
+    try {
+      await MatterServices.initialize(getContext(this) as common.UIAbilityContext);
+      this.matterReadError = '';
+      this.matterRevision++;
+      MatterServices.requestCardRefresh();
+    } catch (error) {
+      this.matterReadError = matterErrorMessage(error as Error);
+    } finally {
+      this.matterLoading = false;
     }
   }
 
@@ -657,7 +678,16 @@ export struct HomeScreen {
             MatterCardDeck({ searchOpen: this.searchOpen, revision: this.matterRevision, homeRequest: this.deckHomeRequest,
               pageHeight: this.contentHeight + HOME_HEADER_HEIGHT,
               onBrowseChange: (awayFromFront: boolean) => { this.deckAwayFromFront = awayFromFront; } })
-              .visibility(this.tab === HomeTab.Cards ? Visibility.Visible : Visibility.None)
+              .visibility(this.tab === HomeTab.Cards && !this.matterReadError && !this.matterLoading ?
+                Visibility.Visible : Visibility.None)
+            if (this.tab === HomeTab.Cards && (this.matterReadError || this.matterLoading)) {
+              Column({ space: Space.normal }) {
+                Text(this.matterLoading ? '正在读取事项' : this.matterReadError).fontColor(Colors.subText)
+                if (this.matterReadError && !this.matterLoading) {
+                  Button('重新读取').onClick(() => this.loadMatters())
+                }
+              }.width('100%').padding(Space.large)
+            }
             if (this.tab === HomeTab.Timeline) {
               Column() { this.TimelineBody() }.width('100%').height('100%').alignItems(HorizontalAlign.Start)
             } else if (this.tab === HomeTab.Settings) {

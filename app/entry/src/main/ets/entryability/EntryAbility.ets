@@ -5,6 +5,7 @@ import { TimelineBlock } from '../contracts/TimelineService';
 import { timelineReadCode } from '../domain/TimelineReadError';
 import { TimelineServices } from '../application/TimelineServices';
 import { TimelineReminders } from '../application/TimelineReminders';
+import { MatterServices } from '../application/MatterServices';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -12,6 +13,9 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    MatterServices.initialize(this.context).catch(() => {
+      hilog.error(0x0000, 'ToDone', 'Matter reload failed on foreground');
+    });
     this.refreshTimelineReminders();
   }
 

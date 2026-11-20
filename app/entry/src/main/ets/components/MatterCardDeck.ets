@@ -1,3 +1,4 @@
+import { matterErrorMessage } from '../domain/MatterSnapshot';
 import { unifiedDataChannel } from '@kit.ArkData';
 import { AnimatorResult, LengthMetrics, router } from '@kit.ArkUI';
 import { MatterServices } from '../application/MatterServices';
@@ -32,6 +33,7 @@ export struct MatterCardDeck {
   private heights: Map<string, number> = new Map<string, number>();
   private deckHeight: number = 0;
   private deckOffset: number = 0;
+  @State private savingMatter: boolean = false;
   private store: MatterStore = MatterStore.getInstance();
   private service: MatterService = MatterServices.getService();
   private matters: Matter[] = [];
@@ -210,6 +212,18 @@ export struct MatterCardDeck {
     router.pushUrl({ url: 'pages/MatterDetail', params: { matterId: matter.id } });
   }
 
+  private async perform(write: () => Promise<void>): Promise<void> {
+    if (this.savingMatter) return;
+    this.savingMatter = true;
+    try {
+      await write();
+    } catch (error) {
+      this.getUIContext().getPromptAction().showToast({ message: matterErrorMessage(error as Error), duration: 3000 });
+    } finally {
+      this.savingMatter = false;
+    }
+  }
+
   private showNotice(message: string): void {
     this.getUIContext().getPromptAction().showToast({ message: message, duration: 1500, bottom: DOCK_CLEARANCE });
   }
@@ -222,11 +236,12 @@ export struct MatterCardDeck {
     if (this.suppressTap || this.showArchived || MatterServices.isPreview()) return;
     const index = this.matters.findIndex((matter: Matter) => matter.id === id);
     if (index < 0 || index + delta < 0 || index + delta >= this.matters.length) return;
-    this.store.moveMatterByDelta(id, delta);
-    this.pendingDeleteMatterId = '';
-    // 保留当前位置，让交换顺序的两张卡直接在眼前换位。
-    this.refresh(true);
-    this.refreshCards('已调整排序');
+    this.perform(async (): Promise<void> => {
+      await this.store.moveMatterByDelta(id, delta);
+      this.pendingDeleteMatterId = '';
+      this.refresh(true);
+      this.refreshCards('已调整排序');
+    });
   }
 
   private async addExamples(): Promise<void> {
@@ -261,9 +276,11 @@ export struct MatterCardDeck {
       const value = record ? record.getValue() : undefined;
       const sourceId = record && record.getType() === MATTER_DRAG_TYPE && typeof value === 'string' ? value : '';
       if (sourceId.length > 0 && sourceId !== targetId) {
-        this.store.createOrJoinCluster(sourceId, targetId);
-        this.refresh();
-        this.refreshCards('已建立关联');
+        this.perform(async (): Promise<void> => {
+          await this.store.createOrJoinCluster(sourceId, targetId);
+          this.refresh();
+          this.refreshCards('已建立关联');
+        });
       }
     } catch (error) {
     }
@@ -395,16 +412,18 @@ export struct MatterCardDeck {
             color: Colors.border
           })
           .onClick(() => {
-            if (!this.pendingReset) {
-              this.pendingReset = true;
-              this.showNotice('再次点击确认重置演示数据');
-              return;
-            }
-            this.store.resetDemoData();
-            this.pendingReset = false;
-            this.pendingDeleteMatterId = '';
-            this.refresh();
-            this.refreshCards('已重置演示数据');
+            this.perform(async (): Promise<void> => {
+              if (!this.pendingReset) {
+                this.pendingReset = true;
+                this.showNotice('再次点击确认重置演示数据');
+                return;
+              }
+              await this.store.resetDemoData();
+              this.pendingReset = false;
+              this.pendingDeleteMatterId = '';
+              this.refresh();
+              this.refreshCards('已重置演示数据');
+            });
           });
       }
     }.width('100%').padding({ left: Space.large, right: Space.large, top: Space.small })
@@ -499,11 +518,13 @@ export struct MatterCardDeck {
             .borderRadius(Radius.normal)
             .margin({ right: Space.small, bottom: Space.tiny })
             .onClick(() => {
-              if (this.suppressTap) return;
-              this.store.detachCluster(matter.id);
-              this.pendingDeleteMatterId = '';
-              this.refresh();
-              this.refreshCards('已移出弱关联');
+              this.perform(async (): Promise<void> => {
+                if (this.suppressTap) return;
+                await this.store.detachCluster(matter.id);
+                this.pendingDeleteMatterId = '';
+                this.refresh();
+                this.refreshCards('已移出弱关联');
+              });
             });
         }
         Button(matter.archived ? '恢复' : '归档')
@@ -515,12 +536,14 @@ export struct MatterCardDeck {
           .borderRadius(Radius.normal)
           .margin({ right: Space.small, bottom: Space.tiny })
           .onClick(() => {
-            if (this.suppressTap) return;
-            const wasArchived = matter.archived;
-            this.store.archiveMatter(matter.id, !matter.archived);
-            this.pendingDeleteMatterId = '';
-            this.refresh();
-            this.refreshCards(wasArchived ? '已恢复事项' : '已归档事项');
+            this.perform(async (): Promise<void> => {
+              if (this.suppressTap) return;
+              const wasArchived = matter.archived;
+              await this.store.archiveMatter(matter.id, !matter.archived);
+              this.pendingDeleteMatterId = '';
+              this.refresh();
+              this.refreshCards(wasArchived ? '已恢复事项' : '已归档事项');
+            });
           });
         Button(this.pendingDeleteMatterId === matter.id ? '确认删除' : '删除')
           .fontSize(14)
@@ -531,16 +554,18 @@ export struct MatterCardDeck {
           .borderRadius(Radius.normal)
           .margin({ right: Space.small, bottom: Space.tiny })
           .onClick(() => {
-            if (this.suppressTap) return;
-            if (this.pendingDeleteMatterId !== matter.id) {
-              this.pendingDeleteMatterId = matter.id;
-              this.showNotice(`再次点击确认删除「${matter.title}」`);
-              return;
-            }
-            this.store.deleteMatter(matter.id);
-            this.pendingDeleteMatterId = '';
-            this.refresh();
-            this.refreshCards('已删除事项');
+            this.perform(async (): Promise<void> => {
+              if (this.suppressTap) return;
+              if (this.pendingDeleteMatterId !== matter.id) {
+                this.pendingDeleteMatterId = matter.id;
+                this.showNotice(`再次点击确认删除「${matter.title}」`);
+                return;
+              }
+              await this.store.deleteMatter(matter.id);
+              this.pendingDeleteMatterId = '';
+              this.refresh();
+              this.refreshCards('已删除事项');
+            });
           });
       }.accessibilityLevel(index < this.at.index ? 'no-hide-descendants' : 'auto')
     }

@@ -2,6 +2,9 @@ import { Matter } from '../model/Types';
 import { MatterStore } from '../store/MatterStore';
 
 export interface CardBindingData {
+  formId: string;
+  completedOperationId: string;
+  saveError: string;
   title: string;
   primary: string;
   secondary: string;
@@ -22,7 +25,7 @@ export interface CardBindingData {
   row3Color: string;
 }
 
-export function createCardBindingData(store: MatterStore): CardBindingData {
+export function createCardBindingData(store: MatterStore, formId: string = ''): CardBindingData {
   const summaryMatters = store.selectedSummaryCardMatters();
   const primaryMatter = store.selectedSingleCardMatter();
   const title = primaryMatter ? primaryMatter.title : '事项';
@@ -34,6 +37,9 @@ export function createCardBindingData(store: MatterStore): CardBindingData {
   const quickActionType = primaryMatter ? store.cardQuickActionType(primaryMatter) : 'open';
 
   return {
+    formId,
+    completedOperationId: store.completedFormOperation(formId),
+    saveError: '',
     title,
     primary,
     secondary,

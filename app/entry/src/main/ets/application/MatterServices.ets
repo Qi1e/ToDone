@@ -8,8 +8,8 @@ export class MatterServices {
   private static service: MatterService = new DefaultMatterService(MatterStore.getInstance());
   private static previewMode: boolean = false;
 
-  static initialize(context: common.UIAbilityContext): void {
-    if (!MatterServices.previewMode) MatterStore.getInstance().init(context);
+  static async initialize(context: common.UIAbilityContext): Promise<void> {
+    if (!MatterServices.previewMode) await MatterStore.getInstance().init(context);
   }
 
   static getService(): MatterService {

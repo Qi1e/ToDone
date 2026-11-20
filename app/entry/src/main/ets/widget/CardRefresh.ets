@@ -16,8 +16,8 @@ export function refreshKnownCards(store: MatterStore): CardRefreshResult {
     };
   }
 
-  const data = formBindingData.createFormBindingData(createCardBindingData(store));
   formIds.forEach((formId: string) => {
+    const data = formBindingData.createFormBindingData(createCardBindingData(store, formId));
     formProvider.updateForm(formId, data).then(() => {
     }).catch(() => {
     });

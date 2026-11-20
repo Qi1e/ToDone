@@ -2,52 +2,38 @@ import { Want } from '@kit.AbilityKit';
 import { FormExtensionAbility, formBindingData, formInfo, formProvider } from '@kit.FormKit';
 import { MatterStore } from '../store/MatterStore';
 import { createCardBindingData } from '../widget/CardData';
+import { refreshKnownCards } from '../widget/CardRefresh';
+import { matterErrorMessage } from '../domain/MatterSnapshot';
 
 interface CardEventPayload {
   message?: string;
+  operationId?: string;
 }
 
 interface CardEvent {
   action: string;
   matterId: string;
   value: number;
+  operationId?: string;
 }
 
 export default class EntryFormAbility extends FormExtensionAbility {
   private store: MatterStore = MatterStore.getInstance();
 
   onAddForm(want: Want): formBindingData.FormBindingData {
-    this.ensureStore();
     const formId = this.extractFormId(want);
-    this.store.rememberCardForm(formId);
-    const data = this.createBindingData();
-    if (formId.length > 0) {
-      formProvider.updateForm(formId, data).then(() => {
-      }).catch(() => {
-      });
-    }
-    return data;
+    this.synchronize(formId);
+    const initial = createCardBindingData(this.store, formId);
+    initial.secondary = '正在读取事项';
+    return formBindingData.createFormBindingData(initial);
   }
 
   onUpdateForm(formId: string): void {
-    this.ensureStore();
-    this.store.rememberCardForm(formId);
-    this.updateFormData(formId);
+    this.synchronize(formId);
   }
 
   onFormEvent(formId: string, message: string): void {
-    this.ensureStore();
-    this.store.rememberCardForm(formId);
-    const event = this.extractCardEvent(message);
-    if (event && event.matterId.length > 0) {
-      if (event.action === 'record') {
-        this.store.addEventRecord(event.matterId);
-      }
-      if (event.action === 'counter') {
-        this.store.addCounterEntry(event.matterId, event.value);
-      }
-    }
-    this.updateFormData(formId);
+    this.synchronize(formId, this.extractCardEvent(message));
   }
 
   onAcquireFormState(want: Want): formInfo.FormState {
@@ -55,22 +41,40 @@ export default class EntryFormAbility extends FormExtensionAbility {
   }
 
   onRemoveForm(formId: string): void {
-    this.ensureStore();
-    this.store.removeCardForm(formId);
+    this.remove(formId);
   }
 
-  private ensureStore(): void {
-    this.store.init(this.context);
+  private async remove(formId: string): Promise<void> {
+    try {
+      await this.store.init(this.context);
+      await this.store.removeCardForm(formId);
+    } catch (error) {
+      console.error('ToDone 卡片移除尚未保存');
+    }
   }
 
-  private createBindingData(): formBindingData.FormBindingData {
-    return formBindingData.createFormBindingData(createCardBindingData(this.store));
-  }
-
-  private updateFormData(formId: string): void {
-    formProvider.updateForm(formId, this.createBindingData()).then(() => {
-    }).catch(() => {
-    });
+  private async synchronize(formId: string, event?: CardEvent): Promise<void> {
+    try {
+      await this.store.init(this.context);
+      if (!this.store.cardFormIds().includes(formId)) await this.store.rememberCardForm(formId);
+      if (event && event.matterId) {
+        if (event.action === 'record') {
+          await this.store.addEventRecord(event.matterId, undefined, event.operationId);
+        } else if (event.action === 'counter') {
+          await this.store.addCounterEntry(event.matterId, event.value, event.operationId);
+        }
+      }
+    } catch (error) {
+      const data = createCardBindingData(this.store, formId);
+      data.saveError = matterErrorMessage(error as Error);
+      await formProvider.updateForm(formId, formBindingData.createFormBindingData(data)).catch(() => {
+        console.error('ToDone 卡片错误提示更新失败');
+      });
+      return;
+    }
+    await formProvider.updateForm(formId, formBindingData.createFormBindingData(createCardBindingData(this.store, formId)))
+      .catch(() => { console.error('ToDone 数据已保存，当前卡片刷新待重试'); });
+    refreshKnownCards(this.store);
   }
 
   private extractFormId(want: Want): string {
@@ -87,8 +91,10 @@ export default class EntryFormAbility extends FormExtensionAbility {
 
   private extractCardEvent(message: string): CardEvent | undefined {
     let normalized = message;
+    let operationId: string | undefined = undefined;
     try {
       const payload = JSON.parse(message) as CardEventPayload;
+      operationId = payload.operationId;
       if (payload.message) {
         normalized = payload.message;
       }
@@ -99,7 +105,8 @@ export default class EntryFormAbility extends FormExtensionAbility {
       return {
         action: 'record',
         matterId: normalized.substring('record:'.length),
-        value: 0
+        value: 0,
+        operationId
       };
     }
     if (normalized.startsWith('counter:')) {
@@ -108,7 +115,8 @@ export default class EntryFormAbility extends FormExtensionAbility {
       return {
         action: 'counter',
         matterId: parts.length > 1 ? parts[1] : '',
-        value: Number.isNaN(parsedValue) ? 1 : parsedValue
+        value: parsedValue,
+        operationId
       };
     }
     return undefined;
