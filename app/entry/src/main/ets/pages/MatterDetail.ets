@@ -1,3 +1,4 @@
+import { matterErrorMessage } from '../domain/MatterSnapshot';
 import { dateSummary } from '../common/DateFormat';
 import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
@@ -21,6 +22,7 @@ interface MatterRouteParams {
 @Entry
 @Component
 struct MatterDetail {
+  @State private savingMatter: boolean = false;
   private store: MatterStore = MatterStore.getInstance();
 
   @State matterId: string = '';
@@ -31,25 +33,42 @@ struct MatterDetail {
   @State checklistInput: string = '';
   @State changedTick: number = 0;
   @State enabledModuleSnapshot: ModuleInstance[] = [];
+  @State private matter: Matter | undefined = undefined;
+  @State private readError: string = '';
+  private unsubscribe?: () => void;
 
   aboutToAppear(): void {
-    const context = getContext(this) as common.UIAbilityContext;
-    this.store.init(context);
     const params = router.getParams() as MatterRouteParams;
     this.matterId = params.matterId ?? '';
-    this.loadFields();
+    this.unsubscribe = this.store.subscribe(() => this.loadFields());
+    this.load();
   }
 
   onPageShow(): void {
-    this.loadFields();
+    this.load();
+  }
+
+  aboutToDisappear(): void {
+    this.unsubscribe?.();
+  }
+
+  private async load(): Promise<void> {
+    try {
+      await this.store.init(getContext(this) as common.UIAbilityContext);
+      this.readError = '';
+      this.loadFields();
+    } catch (error) {
+      this.readError = matterErrorMessage(error as Error);
+    }
   }
 
   private currentMatter(): Matter | undefined {
-    return this.store.findMatter(this.matterId);
+    return this.matter;
   }
 
   private loadFields(): void {
-    const matter = this.currentMatter();
+    const matter = this.store.findMatter(this.matterId);
+    this.matter = matter;
     if (!matter) {
       return;
     }
@@ -84,7 +103,17 @@ struct MatterDetail {
     return deadline ? dateSummary(deadline) : '未设置日期';
   }
 
-
+  private async perform(write: () => Promise<void>): Promise<void> {
+    if (this.savingMatter) return;
+    this.savingMatter = true;
+    try {
+      await write();
+    } catch (error) {
+      this.getUIContext().getPromptAction().showToast({ message: matterErrorMessage(error as Error), duration: 3000 });
+    } finally {
+      this.savingMatter = false;
+    }
+  }
 
   build() {
     Navigation() {
@@ -92,7 +121,10 @@ struct MatterDetail {
         Column({ space: Space.large }) {
           this.TopBar();
 
-          if (this.currentMatter()) {
+          if (this.readError) {
+            Text(this.readError).fontColor(Colors.danger);
+            Button('重新读取').onClick(() => this.load());
+          } else if (this.currentMatter()) {
             Text(this.titleInput).fontSize(22)
             if (this.descriptionInput) { Text(this.descriptionInput) }
             Button('编辑事项').onClick(() => {
@@ -143,7 +175,7 @@ struct MatterDetail {
     if (this.hasCurrentMatter()) {
       ForEach(this.enabledModules(), (module: ModuleInstance) => {
         this.ModulePanel(module.moduleType);
-      }, (module: ModuleInstance) => module.id);
+      }, (module: ModuleInstance) => module.id + '_' + this.changedTick);
     }
   }
 
@@ -195,9 +227,11 @@ struct MatterDetail {
       .backgroundColor(Colors.primary)
       .borderRadius(Radius.normal)
       .onClick(() => {
-        this.store.addEventRecord(this.matterId);
-        this.refreshOnly();
-        this.refreshCards('已记录一次');
+        this.perform(async (): Promise<void> => {
+          await this.store.addEventRecord(this.matterId);
+          this.refreshOnly();
+          this.refreshCards('已记录一次');
+        });
       });
 
     ForEach(this.store.eventRecordsFor(this.matterId), (entry: EventRecordEntry) => {
@@ -227,9 +261,11 @@ struct MatterDetail {
         .backgroundColor(Colors.primary)
         .borderRadius(Radius.normal)
         .onClick(() => {
-          this.store.addCounterEntry(this.matterId, this.store.counterStep(this.matterId));
-          this.refreshOnly();
-          this.refreshCards('已增加计数');
+          this.perform(async (): Promise<void> => {
+            await this.store.addCounterEntry(this.matterId, this.store.counterStep(this.matterId));
+            this.refreshOnly();
+            this.refreshCards('已增加计数');
+          });
         });
       Button('+10')
         .fontSize(15)
@@ -237,9 +273,11 @@ struct MatterDetail {
         .backgroundColor(Colors.primary)
         .borderRadius(Radius.normal)
         .onClick(() => {
-          this.store.addCounterEntry(this.matterId, 10);
-          this.refreshOnly();
-          this.refreshCards('已增加计数');
+          this.perform(async (): Promise<void> => {
+            await this.store.addCounterEntry(this.matterId, 10);
+            this.refreshOnly();
+            this.refreshCards('已增加计数');
+          });
         });
       Button('今日一次')
         .fontSize(15)
@@ -247,9 +285,11 @@ struct MatterDetail {
         .backgroundColor(Colors.primarySoft)
         .borderRadius(Radius.normal)
         .onClick(() => {
-          this.store.markDailyOnce(this.matterId);
-          this.refreshOnly();
-          this.refreshCards('已记录今日一次');
+          this.perform(async (): Promise<void> => {
+            await this.store.markDailyOnce(this.matterId);
+            this.refreshOnly();
+            this.refreshCards('已记录今日一次');
+          });
         });
     }
 
@@ -269,13 +309,15 @@ struct MatterDetail {
         .backgroundColor(Colors.primary)
         .borderRadius(Radius.normal)
         .onClick(() => {
-          const parsed = Number(this.customCounterInput);
-          if (!Number.isNaN(parsed)) {
-            this.store.addCounterEntry(this.matterId, parsed);
-            this.customCounterInput = '';
-            this.refreshOnly();
-            this.refreshCards('已增加计数');
-          }
+          this.perform(async (): Promise<void> => {
+            const parsed = Number(this.customCounterInput);
+            if (!Number.isNaN(parsed)) {
+              await this.store.addCounterEntry(this.matterId, parsed);
+              this.customCounterInput = '';
+              this.refreshOnly();
+              this.refreshCards('已增加计数');
+            }
+          });
         });
     }
   }
@@ -313,10 +355,12 @@ struct MatterDetail {
         .backgroundColor(Colors.primary)
         .borderRadius(Radius.normal)
         .onClick(() => {
-          this.store.addChecklistItem(this.matterId, this.checklistInput);
-          this.checklistInput = '';
-          this.refreshOnly();
-          this.refreshCards('已添加列表项');
+          this.perform(async (): Promise<void> => {
+            await this.store.addChecklistItem(this.matterId, this.checklistInput);
+            this.checklistInput = '';
+            this.refreshOnly();
+            this.refreshCards('已添加列表项');
+          });
         });
     }
 
@@ -357,9 +401,11 @@ struct MatterDetail {
               .borderRadius(Radius.normal)
               .margin({ right: Space.small, bottom: Space.small })
               .onClick(() => {
-                this.store.addMatterListEntry(this.matterId, matter.id);
-                this.refreshOnly();
-                this.refreshCards('已关联事项');
+                this.perform(async (): Promise<void> => {
+                  await this.store.addMatterListEntry(this.matterId, matter.id);
+                  this.refreshOnly();
+                  this.refreshCards('已关联事项');
+                });
               });
           }, (matter: Matter) => matter.id);
         }
@@ -411,9 +457,11 @@ struct MatterDetail {
           .backgroundColor(item.completed ? Colors.success : Colors.primarySoft)
           .borderRadius(Radius.normal)
           .onClick(() => {
-            this.store.toggleChecklistItem(item.id);
-            this.refreshOnly();
-            this.refreshCards('已更新列表项');
+            this.perform(async (): Promise<void> => {
+              await this.store.toggleChecklistItem(item.id);
+              this.refreshOnly();
+              this.refreshCards('已更新列表项');
+            });
           });
         Text(item.title)
           .fontSize(15)
@@ -434,9 +482,11 @@ struct MatterDetail {
       .backgroundColor('#FFE7ED')
       .borderRadius(Radius.normal)
       .onClick(() => {
-        this.store.deleteChecklistItem(item.id);
-        this.refreshOnly();
-        this.refreshCards('已删除列表项');
+        this.perform(async (): Promise<void> => {
+          await this.store.deleteChecklistItem(item.id);
+          this.refreshOnly();
+          this.refreshCards('已删除列表项');
+        });
       });
   }
 

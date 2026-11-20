@@ -1,13 +1,14 @@
 import { describe, beforeEach, it, expect } from '@ohos/hypium';
-import { MatterStore } from '../../../main/ets/store/MatterStore';
+import { MatterState } from '../../../main/ets/domain/MatterState';
+import { createSeedState } from '../../../main/ets/model/Defaults';
 import { ModuleType } from '../../../main/ets/model/Types';
 
 export default function matterStoreTest() {
   describe('MatterStore', () => {
-    const store = MatterStore.getInstance();
+    let store = new MatterState(createSeedState());
 
     beforeEach(() => {
-      store.resetDemoData();
+      store = new MatterState(createSeedState());
     });
 
     it('creates, updates, archives, and deletes a matter', 0, () => {

@@ -1,5 +1,6 @@
 import { EditorDraft } from '../domain/MatterEditor';
 import { AppState, CreateMatterIntent, Matter } from '../model/Types';
+import { MatterOperation } from './MatterPersistence';
 
 export interface CreateMatterRequest {
   intent: CreateMatterIntent;
@@ -9,7 +10,7 @@ export interface CreateMatterRequest {
 
 export interface CreateMatterResult {
   success: boolean;
-  // 保存失败时可能已写入内存；使用此 ID 重试保存，不重复创建。
+  // 保存未确认时保留同一事项与请求身份，重试原操作。
   matterId: string;
   errorCode: string;
   message: string;
@@ -29,6 +30,7 @@ export interface MatterService {
 export interface MatterRepository {
   // 返回独立快照，调用方不能直接修改仓库中的状态。
   readState(): AppState;
-  // 先发布内存状态，再等待持久化。失败不承诺回滚，调用方可重试同一快照。
-  commitState(state: AppState): Promise<void>;
+  reload(): Promise<void>;
+  // 回调可在版本冲突后重跑，只修改传入状态。提交确认后才发布结果。
+  transact<T>(operation: MatterOperation, change: (state: AppState) => T): Promise<T>;
 }

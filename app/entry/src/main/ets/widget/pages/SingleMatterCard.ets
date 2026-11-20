@@ -2,6 +2,7 @@ let singleMatterCardStorage = new LocalStorage();
 
 interface MessageParams {
   message: string;
+  operationId?: string;
 }
 
 interface MessageAction {
@@ -18,6 +19,11 @@ interface RouterAction {
 @Entry(singleMatterCardStorage)
 @Component
 struct SingleMatterCard {
+  @LocalStorageProp('formId') formId: string = '';
+  @LocalStorageProp('completedOperationId') completedOperationId: string = '';
+  @LocalStorageProp('saveError') saveError: string = '';
+  @State private pendingOperationId: string = '';
+  @State private pendingRequest: string = '';
   @LocalStorageProp('title') title: string = '事项';
   @LocalStorageProp('primary') primary: string = '暂无记录';
   @LocalStorageProp('secondary') secondary: string = '打开 App 管理模块';
@@ -48,7 +54,7 @@ struct SingleMatterCard {
             .fontColor('#2F7BFF')
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis });
-          Text(this.secondary.length > 0 ? this.secondary : '打开应用')
+          Text(this.saveError || (this.secondary.length > 0 ? this.secondary : '打开应用'))
             .fontSize(11)
             .fontColor('#667085')
             .maxLines(1)
@@ -74,14 +80,15 @@ struct SingleMatterCard {
             this.openApp();
           });
 
-        Button(this.quickActionLabel)
+        Button(this.pendingOperationId && this.pendingOperationId !== this.completedOperationId &&
+          this.pendingRequest === this.matterId + ':' + this.quickActionType ? '确认保存' : this.quickActionLabel)
           .height(34)
           .fontSize(14)
           .fontColor(Color.White)
           .backgroundColor('#2F7BFF')
           .borderRadius(10)
           .layoutWeight(1)
-          .enabled(this.matterId.length > 0)
+          .enabled(this.matterId.length > 0 && this.formId.length > 0)
           .onClick(() => {
             this.performQuickAction();
           });
@@ -98,7 +105,8 @@ struct SingleMatterCard {
       return;
     }
     const params: MessageParams = {
-      message: `record:${this.matterId}`
+      message: `record:${this.matterId}`,
+      operationId: this.operationId()
     };
     const action: MessageAction = {
       action: 'message',
@@ -112,7 +120,8 @@ struct SingleMatterCard {
       return;
     }
     const params: MessageParams = {
-      message: `counter:${this.matterId}:${this.quickActionType.substring(8)}`
+      message: `counter:${this.matterId}:${this.quickActionType.substring(8)}`,
+      operationId: this.operationId()
     };
     const action: MessageAction = {
       action: 'message',
@@ -131,6 +140,15 @@ struct SingleMatterCard {
       return;
     }
     this.openApp();
+  }
+
+  private operationId(): string {
+    const request = this.matterId + ':' + this.quickActionType;
+    if (!this.pendingOperationId || this.pendingOperationId === this.completedOperationId || this.pendingRequest !== request) {
+      this.pendingOperationId = 'form:' + this.formId + ':' + Date.now().toString(36) + ':' + Math.random().toString(36).substring(2);
+      this.pendingRequest = request;
+    }
+    return this.pendingOperationId;
   }
 
   private openApp(): void {

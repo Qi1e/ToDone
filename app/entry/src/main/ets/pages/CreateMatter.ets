@@ -9,6 +9,7 @@ import { Colors, Radius, Space } from '../common/Theme';
 import { EditorDraft, EditorItem, invalidEditorField } from '../domain/MatterEditor';
 import { createId, MODULE_OPTIONS, moduleLabel } from '../model/Defaults';
 import { DateMode, Matter, ModuleOption, ModuleType } from '../model/Types';
+import { matterErrorMessage } from '../domain/MatterSnapshot';
 
 interface EditorRoute {
   matterId?: string;
@@ -42,8 +43,22 @@ struct CreateMatter {
   @State editingItemId: string = '';
 
   aboutToAppear(): void {
+    this.initialize();
+  }
+
+  private async initialize(): Promise<void> {
     const context = getContext(this) as common.UIAbilityContext;
-    MatterServices.initialize(context);
+    this.busy = true;
+    try {
+      await MatterServices.initialize(context);
+      this.unavailable = false;
+    } catch (error) {
+      this.unavailable = true;
+      this.feedback = matterErrorMessage(error as Error);
+      return;
+    } finally {
+      this.busy = false;
+    }
     const route = router.getParams() as EditorRoute | undefined;
     const id = route?.matterId ?? '';
     this.ownerId = route?.ownerMatterId ?? '';
@@ -316,6 +331,7 @@ struct CreateMatter {
       if (this.unavailable) {
         this.Header();
         Text(this.feedback).fontSize(15).fontColor(Colors.subText).margin({ top: Space.large });
+        Button('重新读取').onClick(() => this.initialize());
       } else {
         List({ scroller: this.scroller, space: Space.small }) {
           ListItem() {
@@ -325,12 +341,12 @@ struct CreateMatter {
           if (this.resumed) {
             ListItem() {
               this.DraftBanner();
-            }.margin({ bottom: Space.small })
+            }.margin({ bottom: Space.small }).enabled(!this.busy && !this.draft.token)
           }
 
           ListItem() {
             this.TitleCard();
-          }.margin({ bottom: Space.small })
+          }.margin({ bottom: Space.small }).enabled(!this.busy && !this.draft.token)
 
           ListItem() {
             this.SectionHeading();
@@ -339,13 +355,13 @@ struct CreateMatter {
           ForEach(this.draft.types, (type: ModuleType) => {
             ListItem() {
               this.ModuleCard(type);
-            }
+            }.enabled(!this.busy && !this.draft.token)
           }, (type: ModuleType) => type)
 
           if (this.availableOptions().length > 0) {
             ListItem() {
               this.AvailableTray();
-            }.margin({ top: Space.small })
+            }.margin({ top: Space.small }).enabled(!this.busy && !this.draft.token)
           }
 
           ListItem() {
@@ -355,7 +371,7 @@ struct CreateMatter {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Off)
-        .enabled(!this.busy && !this.draft.token)
+        .enabled(!this.busy)
       }
     }
     .width('100%')

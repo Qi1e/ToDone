@@ -1,3 +1,4 @@
+import { matterErrorMessage } from '../domain/MatterSnapshot';
 import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
 import { MatterServices } from '../application/MatterServices';
@@ -9,16 +10,32 @@ import { MatterStore } from '../store/MatterStore';
 @Entry
 @Component
 struct WidgetPreview {
+  @State private savingMatter: boolean = false;
   private store: MatterStore = MatterStore.getInstance();
   @State matters: Matter[] = [];
   @State selectedSingleId: string = '';
   @State selectedSummaryIds: string[] = [];
+  @State private readError: string = '';
+  private unsubscribe?: () => void;
 
   aboutToAppear(): void {
-    const context = getContext(this) as common.UIAbilityContext;
-    this.store.init(context);
-    this.loadState();
-    MatterServices.requestCardRefresh();
+    this.unsubscribe = this.store.subscribe(() => this.loadState());
+    this.load();
+  }
+
+  aboutToDisappear(): void {
+    this.unsubscribe?.();
+  }
+
+  private async load(): Promise<void> {
+    try {
+      await this.store.init(getContext(this) as common.UIAbilityContext);
+      this.readError = '';
+      this.loadState();
+      MatterServices.requestCardRefresh();
+    } catch (error) {
+      this.readError = matterErrorMessage(error as Error);
+    }
   }
 
   private loadState(): void {
@@ -28,7 +45,7 @@ struct WidgetPreview {
   }
 
   private singleMatter(): Matter | undefined {
-    return this.store.findMatter(this.selectedSingleId);
+    return this.matters.find((matter: Matter) => matter.id === this.selectedSingleId);
   }
 
   private singleMatterForPreview(): Matter {
@@ -53,7 +70,7 @@ struct WidgetPreview {
 
   private summaryMatters(): Matter[] {
     return this.selectedSummaryIds
-      .map((id: string) => this.store.findMatter(id))
+      .map((id: string) => this.matters.find((matter: Matter) => matter.id === id))
       .filter((matter: Matter | undefined) => matter !== undefined) as Matter[];
   }
 
@@ -72,6 +89,18 @@ struct WidgetPreview {
   private refreshDesktopCards(action?: string): void {
     const result = MatterServices.requestCardRefresh(action);
     this.getUIContext().getPromptAction().showToast({ message: result.message, duration: 1500 });
+  }
+
+  private async perform(write: () => Promise<void>): Promise<void> {
+    if (this.savingMatter) return;
+    this.savingMatter = true;
+    try {
+      await write();
+    } catch (error) {
+      this.getUIContext().getPromptAction().showToast({ message: matterErrorMessage(error as Error), duration: 3000 });
+    } finally {
+      this.savingMatter = false;
+    }
   }
 
   build() {
@@ -93,9 +122,14 @@ struct WidgetPreview {
           }
           .width('100%');
 
-          this.CardSettingsPanel();
-          this.SingleCardPreview();
-          this.SummaryCardPreview();
+          if (this.readError) {
+            Text(this.readError).fontColor(Colors.danger);
+            Button('重新读取').onClick(() => this.load());
+          } else {
+            this.CardSettingsPanel();
+            this.SingleCardPreview();
+            this.SummaryCardPreview();
+          }
 
         }
         .width('100%')
@@ -127,9 +161,11 @@ struct WidgetPreview {
             .borderRadius(Radius.normal)
             .margin({ right: Space.small, bottom: Space.small })
             .onClick(() => {
-              this.store.setSingleCardMatter(matter.id);
-              this.loadState();
-              this.refreshDesktopCards('已更新单事项卡片选择');
+              this.perform(async (): Promise<void> => {
+                await this.store.setSingleCardMatter(matter.id);
+                this.loadState();
+                this.refreshDesktopCards('已更新单事项卡片选择');
+              });
             });
         }, (matter: Matter) => matter.id);
       }
@@ -149,9 +185,11 @@ struct WidgetPreview {
             .borderRadius(Radius.normal)
             .margin({ right: Space.small, bottom: Space.small })
             .onClick(() => {
-              this.store.toggleSummaryCardMatter(matter.id);
-              this.loadState();
-              this.refreshDesktopCards('已更新汇总卡片选择');
+              this.perform(async (): Promise<void> => {
+                await this.store.toggleSummaryCardMatter(matter.id);
+                this.loadState();
+                this.refreshDesktopCards('已更新汇总卡片选择');
+              });
             });
         }, (matter: Matter) => matter.id);
       }

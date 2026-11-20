@@ -1,747 +1,339 @@
 import { common } from '@kit.AbilityKit';
 import { MatterRepository } from '../contracts/MatterService';
-import { canLinkMatterInState } from '../domain/MatterLinks';
-import { PreferencesStateStorage } from './PreferencesStateStorage';
-import { StateStorage } from './StateStorage';
-import { dateModeLabel, dateSummary, isToday } from '../common/DateFormat';
-import {
-  appendDeckExamples,
-  CLUSTER_COLORS,
-  createId,
-  createMatter,
-  createModuleInstance,
-  createSeedState,
-  defaultConfigJson,
-  moduleLabel
-} from '../model/Defaults';
-import {
-  AppState,
-  ChecklistItem,
-  Cluster,
-  CounterEntry,
-  CreateMatterIntent,
-  CounterConfig,
-  DeadlineConfig,
-  DateMode,
-  EventRecordEntry,
-  Matter,
-  ModuleInstance,
-  ModuleType,
-  NoteConfig,
-  ProgressConfig
-} from '../model/Types';
+import { MatterOperation } from '../contracts/MatterPersistence';
+import { MatterState } from '../domain/MatterState';
+import { MatterDataError, emptyMatterState } from '../domain/MatterSnapshot';
+import { TransactionalMatterRepository } from '../domain/TransactionalMatterRepository';
+import { createId } from '../model/Defaults';
+import { AppState, ChecklistItem, CounterConfig, CreateMatterIntent, DateMode, DeadlineConfig,
+  EventRecordEntry, Matter, ModuleType } from '../model/Types';
+import { RdbMatterPersistence } from './RdbMatterPersistence';
 
 export class MatterStore implements MatterRepository {
   private static instance: MatterStore = new MatterStore();
-  private storage?: StateStorage;
-  private ready: boolean = false;
-  private state: AppState = createSeedState();
+  private repository?: TransactionalMatterRepository;
+  private listeners: Set<() => void> = new Set();
+  private failedOperations: Map<string, MatterOperation> = new Map();
 
   static getInstance(): MatterStore {
     return MatterStore.instance;
   }
 
-  init(context: common.UIAbilityContext | common.FormExtensionContext): void {
-    if (this.ready) {
-      return;
-    }
-
-    try {
-      const storage = new PreferencesStateStorage(context);
-      const raw = storage.read();
-      if (raw && raw.length > 0) {
-        this.state = this.normalizeState(JSON.parse(raw) as AppState);
-      } else {
-        this.state = createSeedState();
-      }
-      this.storage = storage;
-      if (!raw) this.save();
-      this.ready = true;
-    } catch (error) {
-      this.state = createSeedState();
-      this.storage = undefined;
-      this.ready = true;
-    }
+  async init(context: common.UIAbilityContext | common.FormExtensionContext): Promise<void> {
+    if (!this.repository) this.repository = new TransactionalMatterRepository(new RdbMatterPersistence(context));
+    await this.reload();
   }
 
-  private normalizeState(input: AppState): AppState {
-    return {
-      matters: (input.matters ?? []).sort((a: Matter, b: Matter) => a.orderIndex - b.orderIndex),
-      clusters: input.clusters ?? [],
-      eventRecords: input.eventRecords ?? [],
-      counterEntries: input.counterEntries ?? [],
-      checklistItems: input.checklistItems ?? [],
-      singleCardMatterId: input.singleCardMatterId ?? '',
-      summaryCardMatterIds: input.summaryCardMatterIds ?? (input.matters ?? [])
-        .filter((matter: Matter) => !matter.archived)
-        .sort((a: Matter, b: Matter) => a.orderIndex - b.orderIndex)
-        .slice(0, 3)
-        .map((matter: Matter) => matter.id),
-      cardFormIds: input.cardFormIds ?? []
-    };
-  }
-
-  private save(): void {
-    if (!this.storage) {
-      return;
-    }
-    try {
-      this.storage.write(JSON.stringify(this.state)).catch(() => {
-      });
-    } catch (error) {
-    }
+  async reload(): Promise<void> {
+    if (!this.repository) throw new MatterDataError('MAT-INIT', '事项存储尚未初始化');
+    await this.repository.reload();
+    this.publish();
   }
 
   readState(): AppState {
-    return JSON.parse(JSON.stringify(this.state)) as AppState;
+    return this.repository ? this.repository.readState() : emptyMatterState();
   }
 
-  async commitState(state: AppState): Promise<void> {
-    if (!this.storage) {
-      throw new Error('本地存储尚不可用');
+  completedFormOperation(formId: string): string {
+    return this.repository?.latestOperationId('form:' + formId + ':') ?? '';
+  }
+
+  async transact<T>(operation: MatterOperation, change: (state: AppState) => T): Promise<T> {
+    if (!this.repository) throw new MatterDataError('MAT-INIT', '事项存储尚未初始化');
+    const result = await this.repository.transact(operation, change);
+    this.publish();
+    return result;
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  private publish(): void {
+    this.listeners.forEach((listener: () => void) => {
+      try { listener(); } catch (error) { console.error('ToDone 事项视图更新失败'); }
+    });
+  }
+
+  private view(): MatterState {
+    return new MatterState(this.readState());
+  }
+
+  private async change<T>(kind: string, payload: string, change: (state: MatterState) => T,
+    operationId?: string): Promise<T> {
+    const fingerprint = kind + ':' + payload;
+    const pending = this.failedOperations.get(fingerprint);
+    const operation: MatterOperation = { id: operationId ?? pending?.id ?? createId('operation'), fingerprint };
+    try {
+      const result = await this.transact(operation, (state: AppState): T => change(new MatterState(state)));
+      if (this.failedOperations.get(fingerprint)?.id === operation.id) this.failedOperations.delete(fingerprint);
+      return result;
+    } catch (error) {
+      this.failedOperations.set(fingerprint, operation);
+      throw error as Error;
     }
-    const snapshot = JSON.parse(JSON.stringify(state)) as AppState;
-    const pending = this.storage.write(JSON.stringify(snapshot));
-    // 后续旧入口操作可立即看到新事项，避免异步 flush 期间覆盖新状态。
-    this.state = snapshot;
-    await pending;
   }
 
   allMatters(): Matter[] {
-    return this.state.matters.slice().sort((a: Matter, b: Matter) => a.orderIndex - b.orderIndex);
+    return this.view().allMatters();
   }
 
   activeMatters(): Matter[] {
-    return this.allMatters().filter((matter: Matter) => !matter.archived);
+    return this.view().activeMatters();
   }
 
   archivedMatters(): Matter[] {
-    return this.allMatters().filter((matter: Matter) => matter.archived);
+    return this.view().archivedMatters();
   }
 
   findMatter(id: string): Matter | undefined {
-    return this.state.matters.find((matter: Matter) => matter.id === id);
+    return this.view().findMatter(id);
   }
 
-  addMatter(intent: CreateMatterIntent): Matter {
-    const matter = createMatter(intent, this.state.matters.length);
-    this.state.matters.push(matter);
-    this.reindexMatters();
-    this.save();
-    return matter;
+  addMatter(intent: CreateMatterIntent, operationId?: string): Promise<Matter> {
+    return this.change('addMatter', JSON.stringify([intent]),
+      (state: MatterState) => state.addMatter(intent), operationId);
   }
 
-  updateMatter(id: string, title: string, description: string): void {
-    const matter = this.findMatter(id);
-    if (!matter || title.trim().length === 0) {
-      return;
-    }
-    matter.title = title.trim();
-    matter.description = description.trim();
-    matter.updatedAt = Date.now();
-    this.save();
+  updateMatter(id: string, title: string, description: string, operationId?: string): Promise<void> {
+    return this.change('updateMatter', JSON.stringify([id, title, description]),
+      (state: MatterState) => state.updateMatter(id, title, description), operationId);
   }
 
-  archiveMatter(id: string, archived: boolean): void {
-    const matter = this.findMatter(id);
-    if (!matter) {
-      return;
-    }
-    matter.archived = archived;
-    matter.updatedAt = Date.now();
-    this.reindexMatters();
-    this.save();
+  archiveMatter(id: string, archived: boolean, operationId?: string): Promise<void> {
+    return this.change('archiveMatter', JSON.stringify([id, archived]),
+      (state: MatterState) => state.archiveMatter(id, archived), operationId);
   }
 
-  deleteMatter(id: string): void {
-    this.state.matters = this.state.matters.filter((matter: Matter) => matter.id !== id);
-    this.state.eventRecords = this.state.eventRecords.filter((entry: EventRecordEntry) => entry.matterId !== id);
-    this.state.counterEntries = this.state.counterEntries.filter((entry: CounterEntry) => entry.matterId !== id);
-    this.state.checklistItems = this.state.checklistItems.filter((item: ChecklistItem) => {
-      return item.matterId !== id && item.targetMatterId !== id;
-    });
-    if (this.state.singleCardMatterId === id) {
-      this.state.singleCardMatterId = '';
-    }
-    this.state.summaryCardMatterIds = this.state.summaryCardMatterIds.filter((matterId: string) => matterId !== id);
-    this.removeEmptyClusters();
-    this.reindexMatters();
-    this.save();
+  deleteMatter(id: string, operationId?: string): Promise<void> {
+    return this.change('deleteMatter', JSON.stringify([id]),
+      (state: MatterState) => state.deleteMatter(id), operationId);
   }
 
-  moveMatterByDelta(id: string, delta: number): void {
-    const active = this.activeMatters();
-    const currentIndex = active.findIndex((matter: Matter) => matter.id === id);
-    if (currentIndex < 0) {
-      return;
-    }
-    this.moveMatterToActiveIndex(id, currentIndex + delta);
+  moveMatterByDelta(id: string, delta: number, operationId?: string): Promise<void> {
+    return this.change('moveMatterByDelta', JSON.stringify([id, delta]),
+      (state: MatterState) => state.moveMatterByDelta(id, delta), operationId);
   }
 
-  moveMatterToActiveIndex(id: string, targetIndex: number): void {
-    const active = this.activeMatters();
-    const currentIndex = active.findIndex((matter: Matter) => matter.id === id);
-    if (currentIndex < 0) {
-      return;
-    }
-    const boundedIndex = Math.max(0, Math.min(active.length - 1, targetIndex));
-    const moved = active.splice(currentIndex, 1)[0];
-    active.splice(boundedIndex, 0, moved);
-    active.forEach((matter: Matter, index: number) => {
-      matter.orderIndex = index;
-      matter.updatedAt = Date.now();
-    });
-    this.reindexArchivedAfterActive();
-    this.save();
+  moveMatterToActiveIndex(id: string, targetIndex: number, operationId?: string): Promise<void> {
+    return this.change('moveMatterToActiveIndex', JSON.stringify([id, targetIndex]),
+      (state: MatterState) => state.moveMatterToActiveIndex(id, targetIndex), operationId);
   }
 
-  private reindexMatters(): void {
-    this.state.matters = this.allMatters();
-    this.state.matters.forEach((matter: Matter, index: number) => {
-      matter.orderIndex = index;
-    });
+  createOrJoinCluster(sourceId: string, targetId: string, operationId?: string): Promise<void> {
+    return this.change('createOrJoinCluster', JSON.stringify([sourceId, targetId]),
+      (state: MatterState) => state.createOrJoinCluster(sourceId, targetId), operationId);
   }
 
-  private reindexArchivedAfterActive(): void {
-    const activeIds = this.activeMatters().map((matter: Matter) => matter.id);
-    const active = activeIds.map((id: string) => this.findMatter(id)).filter((matter: Matter | undefined) => matter !== undefined) as Matter[];
-    const archived = this.archivedMatters();
-    this.state.matters = active.concat(archived);
-    this.reindexMatters();
+  clusterWithPrevious(id: string, operationId?: string): Promise<void> {
+    return this.change('clusterWithPrevious', JSON.stringify([id]),
+      (state: MatterState) => state.clusterWithPrevious(id), operationId);
   }
 
-  createOrJoinCluster(sourceId: string, targetId: string): void {
-    const source = this.findMatter(sourceId);
-    const target = this.findMatter(targetId);
-    if (!source || !target || source.id === target.id) {
-      return;
-    }
-
-    const now = Date.now();
-    const sourceClusterId = source.clusterId;
-    let clusterId = target.clusterId ?? sourceClusterId;
-    if (!clusterId) {
-      const cluster = this.createCluster();
-      clusterId = cluster.id;
-    }
-
-    this.state.matters.forEach((matter: Matter) => {
-      if (sourceClusterId && matter.clusterId === sourceClusterId && sourceClusterId !== clusterId) {
-        matter.clusterId = clusterId;
-        matter.updatedAt = now;
-      }
-    });
-    source.clusterId = clusterId;
-    target.clusterId = clusterId;
-    source.updatedAt = now;
-    target.updatedAt = now;
-    this.removeEmptyClusters();
-    this.save();
-  }
-
-  clusterWithPrevious(id: string): void {
-    const active = this.activeMatters();
-    const index = active.findIndex((matter: Matter) => matter.id === id);
-    if (index <= 0) {
-      return;
-    }
-    this.createOrJoinCluster(id, active[index - 1].id);
-  }
-
-  detachCluster(id: string): void {
-    const matter = this.findMatter(id);
-    if (!matter) {
-      return;
-    }
-    matter.clusterId = undefined;
-    matter.updatedAt = Date.now();
-    this.removeEmptyClusters();
-    this.save();
+  detachCluster(id: string, operationId?: string): Promise<void> {
+    return this.change('detachCluster', JSON.stringify([id]),
+      (state: MatterState) => state.detachCluster(id), operationId);
   }
 
   clusterColor(clusterId?: string): string {
-    if (!clusterId) {
-      return '#D8DEE8';
-    }
-    const cluster = this.state.clusters.find((item: Cluster) => item.id === clusterId);
-    return cluster ? cluster.color : '#D8DEE8';
-  }
-
-  private createCluster(): Cluster {
-    const now = Date.now();
-    const color = CLUSTER_COLORS[this.state.clusters.length % CLUSTER_COLORS.length];
-    const cluster: Cluster = {
-      id: createId('cluster'),
-      color,
-      createdAt: now,
-      updatedAt: now
-    };
-    this.state.clusters.push(cluster);
-    return cluster;
-  }
-
-  private removeEmptyClusters(): void {
-    this.state.clusters = this.state.clusters.filter((cluster: Cluster) => {
-      return this.state.matters.some((matter: Matter) => matter.clusterId === cluster.id);
-    });
+    return this.view().clusterColor(clusterId);
   }
 
   hasModule(matter: Matter, type: ModuleType): boolean {
-    return matter.enabledModules.some((module: ModuleInstance) => module.moduleType === type);
+    return this.view().hasModule(matter, type);
   }
 
-  toggleModule(matterId: string, type: ModuleType): void {
-    const matter = this.findMatter(matterId);
-    if (!matter || type === ModuleType.Countdown || type === ModuleType.Progress) {
-      return;
-    }
-    const index = matter.enabledModules.findIndex((module: ModuleInstance) => module.moduleType === type);
-    if (index >= 0) {
-      const removed = matter.enabledModules.splice(index, 1);
-      matter.disabledModules = (matter.disabledModules ?? []).concat(removed);
-      if (type === ModuleType.Deadline) {
-        matter.enabledModules = matter.enabledModules.filter((module: ModuleInstance) => {
-          return module.moduleType !== ModuleType.Countdown;
-        });
-      }
-    } else {
-      const hidden = matter.disabledModules ?? [];
-      const previous = hidden.find((module: ModuleInstance) => module.moduleType === type);
-      matter.enabledModules.push(previous ?? createModuleInstance(matterId, type));
-      matter.disabledModules = hidden.filter((module: ModuleInstance) => module.moduleType !== type);
-      if (type === ModuleType.Deadline && !this.hasModule(matter, ModuleType.Countdown)) {
-        matter.enabledModules.push(createModuleInstance(matterId, ModuleType.Countdown));
-      }
-    }
-    matter.updatedAt = Date.now();
-    this.save();
+  toggleModule(matterId: string, type: ModuleType, operationId?: string): Promise<void> {
+    return this.change('toggleModule', JSON.stringify([matterId, type]),
+      (state: MatterState) => state.toggleModule(matterId, type), operationId);
   }
 
-  private moduleFor(matterId: string, type: ModuleType): ModuleInstance | undefined {
-    const matter = this.findMatter(matterId);
-    if (!matter) {
-      return undefined;
-    }
-    return matter.enabledModules.find((module: ModuleInstance) => module.moduleType === type);
-  }
-
-  private readConfig<T>(matterId: string, type: ModuleType, fallback: T): T {
-    const module = this.moduleFor(matterId, type);
-    if (!module) {
-      return fallback;
-    }
-    try {
-      return JSON.parse(module.configJson) as T;
-    } catch (error) {
-      return fallback;
-    }
-  }
-
-  private writeConfig(matterId: string, type: ModuleType, config: object): void {
-    let module = this.moduleFor(matterId, type);
-    const matter = this.findMatter(matterId);
-    if (!matter) {
-      return;
-    }
-    if (!module) {
-      module = createModuleInstance(matterId, type);
-      matter.enabledModules.push(module);
-    }
-    module.configJson = JSON.stringify(config);
-    module.updatedAt = Date.now();
-    matter.updatedAt = Date.now();
-    this.save();
-  }
-
-  addEventRecord(matterId: string, note?: string): void {
-    this.state.eventRecords.push({
-      id: createId('event'),
-      matterId,
-      timestamp: Date.now(),
-      note
-    });
-    this.save();
+  addEventRecord(matterId: string, note?: string, operationId?: string): Promise<void> {
+    return this.change('addEventRecord', JSON.stringify([matterId, note]),
+      (state: MatterState) => state.addEventRecord(matterId, note), operationId);
   }
 
   eventRecordsFor(matterId: string, limit: number = 8): EventRecordEntry[] {
-    return this.state.eventRecords
-      .filter((entry: EventRecordEntry) => entry.matterId === matterId)
-      .sort((a: EventRecordEntry, b: EventRecordEntry) => b.timestamp - a.timestamp)
-      .slice(0, limit);
+    return this.view().eventRecordsFor(matterId, limit);
   }
 
   todayEventCount(matterId: string): number {
-    return this.state.eventRecords.filter((entry: EventRecordEntry) => {
-      return entry.matterId === matterId && isToday(entry.timestamp);
-    }).length;
+    return this.view().todayEventCount(matterId);
   }
 
-  addCounterEntry(matterId: string, value: number): void {
-    if (value === 0) {
-      return;
-    }
-    this.state.counterEntries.push({
-      id: createId('counter'),
-      matterId,
-      value,
-      timestamp: Date.now()
-    });
-    this.save();
+  addCounterEntry(matterId: string, value: number, operationId?: string): Promise<void> {
+    return this.change('addCounterEntry', JSON.stringify([matterId, value]),
+      (state: MatterState) => state.addCounterEntry(matterId, value), operationId);
   }
 
-  markDailyOnce(matterId: string): void {
-    const done = this.state.counterEntries.some((entry: CounterEntry) => {
-      return entry.matterId === matterId && isToday(entry.timestamp) && entry.value === 1;
-    });
-    if (!done) {
-      this.addCounterEntry(matterId, 1);
-    }
+  markDailyOnce(matterId: string, operationId?: string): Promise<void> {
+    return this.change('markDailyOnce', JSON.stringify([matterId]),
+      (state: MatterState) => state.markDailyOnce(matterId), operationId);
   }
 
   counterSettings(matterId: string): CounterConfig {
-    return this.readConfig<CounterConfig>(matterId, ModuleType.Counter, { mode: 'fixed' });
+    return this.view().counterSettings(matterId);
   }
 
   counterStep(matterId: string): number {
-    return this.counterSettings(matterId).fixedSteps?.[0] ?? 1;
+    return this.view().counterStep(matterId);
   }
 
   counterTotal(matterId: string): number {
-    return this.state.counterEntries
-      .filter((entry: CounterEntry) => entry.matterId === matterId)
-      .reduce((total: number, entry: CounterEntry) => total + entry.value, this.counterSettings(matterId).initialValue ?? 0);
+    return this.view().counterTotal(matterId);
   }
 
   counterToday(matterId: string): number {
-    return this.state.counterEntries
-      .filter((entry: CounterEntry) => entry.matterId === matterId && isToday(entry.timestamp))
-      .reduce((total: number, entry: CounterEntry) => total + entry.value, 0);
+    return this.view().counterToday(matterId);
   }
-
-  // Retained for compatibility with data created before the progress module was removed.
 
   getProgressPercent(matterId: string): number {
-    const fallback: ProgressConfig = {
-      mode: 'manual_percent',
-      percent: 0
-    };
-    const config = this.readConfig<ProgressConfig>(matterId, ModuleType.Progress, fallback);
-    if (config.mode === 'target_value' && config.targetValue && config.targetValue > 0) {
-      return Math.min(100, Math.round(((config.currentValue ?? 0) / config.targetValue) * 100));
-    }
-    return Math.max(0, Math.min(100, Math.round(config.percent ?? 0)));
+    return this.view().getProgressPercent(matterId);
   }
 
-  setProgressPercent(matterId: string, percent: number): void {
-    const config: ProgressConfig = {
-      mode: 'manual_percent',
-      percent: Math.max(0, Math.min(100, Math.round(percent)))
-    };
-    this.writeConfig(matterId, ModuleType.Progress, config);
+  setProgressPercent(matterId: string, percent: number, operationId?: string): Promise<void> {
+    return this.change('setProgressPercent', JSON.stringify([matterId, percent]),
+      (state: MatterState) => state.setProgressPercent(matterId, percent), operationId);
   }
 
   getDeadline(matterId: string): DeadlineConfig | undefined {
-    const module = this.moduleFor(matterId, ModuleType.Deadline);
-    if (!module) {
-      return undefined;
-    }
-    return this.readConfig<DeadlineConfig>(matterId, ModuleType.Deadline, {
-      timestamp: Date.now(),
-      hasTime: false
-    });
+    return this.view().getDeadline(matterId);
   }
 
-  setDeadline(matterId: string, timestamp: number, location: string, mode: DateMode = 'deadline', hasTime: boolean = false): void {
-    const config: DeadlineConfig = {
-      timestamp,
-      mode,
-      hasTime: mode === 'deadline' && hasTime,
-      location: location.trim()
-    };
-    this.writeConfig(matterId, ModuleType.Deadline, config);
-    if (!this.moduleFor(matterId, ModuleType.Countdown)) {
-      const matter = this.findMatter(matterId);
-      matter?.enabledModules.push(createModuleInstance(matterId, ModuleType.Countdown));
-    }
-    this.save();
+  setDeadline(matterId: string, timestamp: number, location: string, mode: DateMode = 'deadline', hasTime: boolean = false, operationId?: string): Promise<void> {
+    return this.change('setDeadline', JSON.stringify([matterId, timestamp, location, mode, hasTime]),
+      (state: MatterState) => state.setDeadline(matterId, timestamp, location, mode, hasTime), operationId);
   }
 
   countdownText(matterId: string): string {
-    const deadline = this.getDeadline(matterId);
-    if (!deadline) {
-      return '未设置截止日期';
-    }
-    return dateSummary(deadline);
+    return this.view().countdownText(matterId);
   }
 
   getNote(matterId: string): string {
-    const config = this.readConfig<NoteConfig>(matterId, ModuleType.Note, { text: '' });
-    return config.text ?? '';
+    return this.view().getNote(matterId);
   }
 
-  setNote(matterId: string, text: string): void {
-    const config: NoteConfig = {
-      text
-    };
-    this.writeConfig(matterId, ModuleType.Note, config);
+  setNote(matterId: string, text: string, operationId?: string): Promise<void> {
+    return this.change('setNote', JSON.stringify([matterId, text]),
+      (state: MatterState) => state.setNote(matterId, text), operationId);
   }
 
   checklistItemsFor(matterId: string): ChecklistItem[] {
-    return this.state.checklistItems
-      .filter((item: ChecklistItem) => item.matterId === matterId)
-      .sort((a: ChecklistItem, b: ChecklistItem) => a.orderIndex - b.orderIndex);
+    return this.view().checklistItemsFor(matterId);
   }
 
   listSummaryText(matterId: string): string {
-    const items = this.checklistItemsFor(matterId);
-    const textItems = items.filter((item: ChecklistItem) => item.entryType !== 'matter_ref');
-    const matterItems = items.length - textItems.length;
-    const completed = textItems.filter((item: ChecklistItem) => item.completed).length;
-    if (matterItems === 0) {
-      return `${completed} / ${textItems.length}`;
-    }
-    if (textItems.length === 0) {
-      return `${matterItems} 个事项`;
-    }
-    return `${completed} / ${textItems.length}，${matterItems} 个事项`;
+    return this.view().listSummaryText(matterId);
   }
 
-  addChecklistItem(matterId: string, title: string): void {
-    if (title.trim().length === 0) {
-      return;
-    }
-    const items = this.checklistItemsFor(matterId);
-    const now = Date.now();
-    this.state.checklistItems.push({
-      id: createId('check'),
-      matterId,
-      title: title.trim(),
-      completed: false,
-      entryType: 'text',
-      orderIndex: items.length,
-      createdAt: now,
-      updatedAt: now
-    });
-    this.save();
+  addChecklistItem(matterId: string, title: string, operationId?: string): Promise<void> {
+    return this.change('addChecklistItem', JSON.stringify([matterId, title]),
+      (state: MatterState) => state.addChecklistItem(matterId, title), operationId);
   }
 
   canLinkMatter(ownerMatterId: string, targetMatterId: string): boolean {
-    return canLinkMatterInState(this.state, ownerMatterId, targetMatterId);
+    return this.view().canLinkMatter(ownerMatterId, targetMatterId);
   }
 
   availableMatterLinks(ownerMatterId: string): Matter[] {
-    return this.activeMatters().filter((matter: Matter) => {
-      return this.canLinkMatter(ownerMatterId, matter.id);
-    });
+    return this.view().availableMatterLinks(ownerMatterId);
   }
 
-  addMatterListEntry(ownerMatterId: string, targetMatterId: string): void {
-    if (!this.canLinkMatter(ownerMatterId, targetMatterId)) {
-      return;
-    }
-    const items = this.checklistItemsFor(ownerMatterId);
-    const target = this.findMatter(targetMatterId);
-    if (!target) {
-      return;
-    }
-    const now = Date.now();
-    this.state.checklistItems.push({
-      id: createId('matter_link'),
-      matterId: ownerMatterId,
-      title: target.title,
-      completed: false,
-      entryType: 'matter_ref',
-      targetMatterId,
-      orderIndex: items.length,
-      createdAt: now,
-      updatedAt: now
-    });
-    this.save();
+  addMatterListEntry(ownerMatterId: string, targetMatterId: string, operationId?: string): Promise<void> {
+    return this.change('addMatterListEntry', JSON.stringify([ownerMatterId, targetMatterId]),
+      (state: MatterState) => state.addMatterListEntry(ownerMatterId, targetMatterId), operationId);
   }
 
   linkedMatterFor(entry: ChecklistItem): Matter | undefined {
-    if (entry.entryType !== 'matter_ref' || !entry.targetMatterId) {
-      return undefined;
-    }
-    return this.findMatter(entry.targetMatterId);
+    return this.view().linkedMatterFor(entry);
   }
 
-  toggleChecklistItem(itemId: string): void {
-    const item = this.state.checklistItems.find((entry: ChecklistItem) => entry.id === itemId);
-    if (!item) {
-      return;
-    }
-    item.completed = !item.completed;
-    item.updatedAt = Date.now();
-    this.save();
+  toggleChecklistItem(itemId: string, operationId?: string): Promise<void> {
+    return this.change('toggleChecklistItem', JSON.stringify([itemId]),
+      (state: MatterState) => state.toggleChecklistItem(itemId), operationId);
   }
 
-  deleteChecklistItem(itemId: string): void {
-    const item = this.state.checklistItems.find((entry: ChecklistItem) => entry.id === itemId);
-    this.state.checklistItems = this.state.checklistItems.filter((entry: ChecklistItem) => entry.id !== itemId);
-    if (item) {
-      this.reindexChecklist(item.matterId);
-    }
-    this.save();
-  }
-
-  private reindexChecklist(matterId: string): void {
-    this.checklistItemsFor(matterId).forEach((item: ChecklistItem, index: number) => {
-      item.orderIndex = index;
-    });
+  deleteChecklistItem(itemId: string, operationId?: string): Promise<void> {
+    return this.change('deleteChecklistItem', JSON.stringify([itemId]),
+      (state: MatterState) => state.deleteChecklistItem(itemId), operationId);
   }
 
   checklistProgressText(matterId: string): string {
-    const items = this.checklistItemsFor(matterId)
-      .filter((item: ChecklistItem) => item.entryType !== 'matter_ref');
-    if (items.length === 0) {
-      return '0 / 0';
-    }
-    const done = items.filter((item: ChecklistItem) => item.completed).length;
-    return `${done} / ${items.length}`;
+    return this.view().checklistProgressText(matterId);
   }
 
   moduleSummary(matter: Matter): string {
-    const visibleModules = matter.enabledModules.filter((module: ModuleInstance) => {
-      return module.moduleType !== ModuleType.Countdown && module.moduleType !== ModuleType.Progress;
-    });
-    const parts: string[] = visibleModules.slice(0, 3).map((module: ModuleInstance) => {
-      if (module.moduleType === ModuleType.Deadline) {
-        return dateModeLabel(this.getDeadline(matter.id)?.mode ?? 'deadline');
-      }
-      return moduleLabel(module.moduleType);
-    });
-    if (visibleModules.length > 3) {
-      parts.push(`等 ${visibleModules.length} 项信息`);
-    }
-    return parts.length > 0 ? parts.join(' · ') : '未启用信息';
+    return this.view().moduleSummary(matter);
   }
 
   cardPrimaryText(matter: Matter): string {
-    if (this.hasModule(matter, ModuleType.EventRecord)) {
-      return `今日 ${this.todayEventCount(matter.id)} 次`;
-    }
-    if (this.hasModule(matter, ModuleType.Counter)) {
-      return `今日 ${this.counterToday(matter.id)}，累计 ${this.counterTotal(matter.id)}`;
-    }
-    if (this.hasModule(matter, ModuleType.Checklist)) {
-      return this.listSummaryText(matter.id);
-    }
-    if (this.hasModule(matter, ModuleType.Countdown)) {
-      return this.countdownText(matter.id);
-    }
-    return this.moduleSummary(matter);
+    return this.view().cardPrimaryText(matter);
   }
 
   cardQuickActionType(matter: Matter): string {
-    if (this.hasModule(matter, ModuleType.EventRecord)) {
-      return 'record';
-    }
-    if (this.hasModule(matter, ModuleType.Counter)) {
-      return 'counter:' + this.counterStep(matter.id);
-    }
-    return 'open';
+    return this.view().cardQuickActionType(matter);
   }
 
   cardQuickActionLabel(matter: Matter): string {
-    const action = this.cardQuickActionType(matter);
-    if (action === 'record') {
-      return '记录';
-    }
-    if (action.startsWith('counter:')) {
-      return '+' + this.counterStep(matter.id);
-    }
-    return '打开';
+    return this.view().cardQuickActionLabel(matter);
   }
 
   selectedSingleCardMatterId(): string {
-    const matter = this.findMatter(this.state.singleCardMatterId);
-    if (matter && !matter.archived) {
-      return matter.id;
-    }
-    const first = this.activeMatters()[0];
-    return first ? first.id : '';
+    return this.view().selectedSingleCardMatterId();
   }
 
   selectedSingleCardMatter(): Matter | undefined {
-    return this.findMatter(this.selectedSingleCardMatterId());
+    return this.view().selectedSingleCardMatter();
   }
 
-  setSingleCardMatter(id: string): void {
-    const matter = this.findMatter(id);
-    if (!matter || matter.archived) {
-      return;
-    }
-    this.state.singleCardMatterId = id;
-    this.save();
+  setSingleCardMatter(id: string, operationId?: string): Promise<void> {
+    return this.change('setSingleCardMatter', JSON.stringify([id]),
+      (state: MatterState) => state.setSingleCardMatter(id), operationId);
   }
 
   selectedSummaryCardMatterIds(): string[] {
-    const activeIds = this.activeMatters().map((matter: Matter) => matter.id);
-    const selected = this.state.summaryCardMatterIds.filter((id: string) => activeIds.includes(id));
-    return selected.slice(0, 3);
+    return this.view().selectedSummaryCardMatterIds();
   }
 
   selectedSummaryCardMatters(): Matter[] {
-    return this.selectedSummaryCardMatterIds()
-      .map((id: string) => this.findMatter(id))
-      .filter((matter: Matter | undefined) => matter !== undefined) as Matter[];
+    return this.view().selectedSummaryCardMatters();
   }
 
   isSummaryCardMatterSelected(id: string): boolean {
-    return this.selectedSummaryCardMatterIds().includes(id);
+    return this.view().isSummaryCardMatterSelected(id);
   }
 
-  toggleSummaryCardMatter(id: string): void {
-    const matter = this.findMatter(id);
-    if (!matter || matter.archived) {
-      return;
-    }
-    const nextIds = this.selectedSummaryCardMatterIds();
-    const index = nextIds.indexOf(id);
-    if (index >= 0) {
-      nextIds.splice(index, 1);
-    } else {
-      if (nextIds.length >= 3) {
-        nextIds.shift();
-      }
-      nextIds.push(id);
-    }
-    this.state.summaryCardMatterIds = nextIds;
-    this.save();
+  toggleSummaryCardMatter(id: string, operationId?: string): Promise<void> {
+    return this.change('toggleSummaryCardMatter', JSON.stringify([id]),
+      (state: MatterState) => state.toggleSummaryCardMatter(id), operationId);
   }
 
-  rememberCardForm(formId: string): void {
-    if (formId.length === 0 || this.state.cardFormIds.includes(formId)) {
-      return;
-    }
-    this.state.cardFormIds.push(formId);
-    this.save();
+  rememberCardForm(formId: string, operationId?: string): Promise<void> {
+    return this.change('rememberCardForm', JSON.stringify([formId]),
+      (state: MatterState) => state.rememberCardForm(formId), operationId);
   }
 
-  removeCardForm(formId: string): void {
-    this.state.cardFormIds = this.state.cardFormIds.filter((id: string) => id !== formId);
-    this.save();
+  removeCardForm(formId: string, operationId?: string): Promise<void> {
+    return this.change('removeCardForm', JSON.stringify([formId]),
+      (state: MatterState) => state.removeCardForm(formId), operationId);
   }
 
   cardFormIds(): string[] {
-    return this.state.cardFormIds.slice();
+    return this.view().cardFormIds();
   }
 
-  async addDeckExamples(): Promise<number> {
-    const state = this.readState();
-    const added = appendDeckExamples(state);
-    // 若上次 flush 失败，重试仍会保存当前快照，且不会重复建卡。
-    await this.commitState(state);
-    return added;
+  addDeckExamples(operationId?: string): Promise<number> {
+    return this.change('addDeckExamples', JSON.stringify([]),
+      (state: MatterState) => state.addDeckExamples(), operationId);
   }
 
-  resetDemoData(): void {
-    this.state = createSeedState();
-    this.save();
+  resetDemoData(operationId?: string): Promise<void> {
+    return this.change('resetDemoData', JSON.stringify([]),
+      (state: MatterState) => state.resetDemoData(), operationId);
   }
 
   defaultConfigFor(type: ModuleType): string {
-    return defaultConfigJson(type);
+    return this.view().defaultConfigFor(type);
   }
 }

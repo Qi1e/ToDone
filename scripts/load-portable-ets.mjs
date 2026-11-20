@@ -8,6 +8,7 @@ import { stripTypeScriptTypes } from 'node:module';
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../app/entry/src/main/ets');
 const sources = [
   'common/DateFormat', 'model/Types', 'model/Defaults', 'contracts/MatterService',
+  'contracts/MatterPersistence', 'domain/MatterSnapshot', 'domain/MatterState', 'domain/TransactionalMatterRepository',
   'domain/MatterLinks', 'domain/MatterEditor', 'domain/DefaultMatterService', 'mocks/MockMatterService',
   'contracts/TimelineService', 'store/StateStorage', 'domain/TimelineReadError', 'domain/TimelineRecurrence', 'domain/TimelineReminderPlan',
   'domain/DefaultTimelineService', 'domain/TimelineLayout', 'domain/TimelineDayRing',
@@ -45,6 +46,7 @@ export async function loadPortableEts() {
     const modules = [];
     for (const name of sources) modules.push(await load(name));
     return { modules: Object.fromEntries(sources.map((name, i) => [name, modules[i]])),
+      moduleUrl: name => pathToFileURL(path.join(temp, `${name}.mjs`)).href,
       close: () => fs.rmSync(temp, { recursive: true, force: true }) };
   } catch (error) {
     fs.rmSync(temp, { recursive: true, force: true });
