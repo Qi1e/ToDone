@@ -1,6 +1,6 @@
 import { Colors, Radius, Space, TABULAR_NUMS, TypeSize, TypeWeight } from '../common/Theme';
 import { TimelineTag } from '../contracts/TimelineService';
-import { createId } from '../model/Defaults';
+import { createId, stripTagEmoji } from '../model/Defaults';
 
 interface TagSwatch {
   name: string;
@@ -215,12 +215,17 @@ export struct TimelineTagForm {
 
   private async submit(): Promise<void> {
     if (this.saving) return;
-    const name = this.nameDraft.trim();
-    if (name.length === 0) {
+    const rawTrimmed = this.nameDraft.trim();
+    const name = stripTagEmoji(rawTrimmed);
+    if (rawTrimmed.length === 0) {
       this.errorMessage = '请输入标签名称';
       return;
     }
-    if (this.tags.some((tag: TimelineTag) => tag.name === name && tag.id !== this.tagId)) {
+    if (name.length === 0) {
+      this.errorMessage = '标签仅支持文字分类，请勿使用表情符号';
+      return;
+    }
+    if (this.tags.some((tag: TimelineTag) => stripTagEmoji(tag.name) === name && tag.id !== this.tagId)) {
       this.errorMessage = '这个标签名已存在';
       return;
     }

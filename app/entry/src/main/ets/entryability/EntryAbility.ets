@@ -1,11 +1,10 @@
 import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { TimelineBlock } from '../contracts/TimelineService';
-import { timelineReadCode } from '../domain/TimelineReadError';
-import { TimelineServices } from '../application/TimelineServices';
 import { TimelineReminders } from '../application/TimelineReminders';
 import { MatterServices } from '../application/MatterServices';
+import { timelineReadCode } from '../domain/TimelineReadError';
+import { MatterStore } from '../store/MatterStore';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -13,26 +12,23 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
-    MatterServices.initialize(this.context).catch(() => {
-      hilog.error(0x0000, 'ToDone', 'Matter reload failed on foreground');
-    });
-    this.refreshTimelineReminders();
+    this.reloadAndSyncReminders();
   }
 
-  private async refreshTimelineReminders(): Promise<void> {
-    let blocks: TimelineBlock[];
+  private async reloadAndSyncReminders(): Promise<void> {
     try {
-      blocks = TimelineServices.get(this.context).list();
+      await MatterServices.initialize(this.context);
     } catch (error) {
-      hilog.error(0x0000, 'ToDone', 'Timeline load failed on foreground: %{public}s',
-        timelineReadCode(error as Error, 'INIT'));
+      hilog.error(0x0000, 'ToDone', 'Matter reload failed on foreground');
       return;
     }
     try {
+      const blocks = MatterStore.getInstance().reminderBlocks();
       const status = await TimelineReminders.sync(this.context, blocks);
       if (status) hilog.info(0x0000, 'ToDone', 'Timeline reminder sync: %{public}s', status);
     } catch (error) {
-      hilog.warn(0x0000, 'ToDone', 'Timeline reminder sync failed: %{public}s', timelineReadCode(error as Error, 'REMINDER'));
+      hilog.warn(0x0000, 'ToDone', 'Timeline reminder sync failed: %{public}s',
+        timelineReadCode(error as Error, 'REMINDER'));
     }
   }
 
@@ -44,4 +40,3 @@ export default class EntryAbility extends UIAbility {
     });
   }
 }
-

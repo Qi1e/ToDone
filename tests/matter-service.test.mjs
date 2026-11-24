@@ -68,7 +68,8 @@ test('无效输入不留下部分事项、列表项或引用', async () => {
   assert.deepEqual(repository.readState(), emptyState());
 });
 
-test('截止日期派生倒计时，备注和文字列表一次提交', async () => {
+test('截止日期派生倒计时且不重复写入冗余 Countdown 模块，备注和文字列表一次提交', async () => {
+  const { MatterState } = bundle.modules['domain/MatterState'];
   const { service, repository } = fixture();
   const result = await service.createMatter({
     intent: { title: '考试', enabledModuleTypes: [ModuleType.Deadline, ModuleType.Note, ModuleType.Checklist],
@@ -78,7 +79,8 @@ test('截止日期派生倒计时，备注和文字列表一次提交', async ()
   assert.equal(result.success, true);
   const matter = service.findMatter(result.matterId);
   assert.deepEqual(matter.enabledModules.map(m => m.moduleType),
-    [ModuleType.Deadline, ModuleType.Countdown, ModuleType.Checklist, ModuleType.Note]);
+    [ModuleType.Deadline, ModuleType.Checklist, ModuleType.Note]);
+  assert.match(new MatterState(repository.readState()).countdownText(result.matterId), /截止/);
   assert.equal(JSON.parse(matter.enabledModules.find(m => m.moduleType === ModuleType.Note).configJson).text, '带证件');
   assert.deepEqual(repository.readState().checklistItems.map(i => [i.title, i.orderIndex]),
     [['报名', 0], ['打印准考证', 1]]);
@@ -180,19 +182,19 @@ test('共享表单创建并挂到原列表；重放保存和末项自动加入�
   assert.equal(service.loadEditor(draft.id).step, '0.5');
 });
 
-test('编辑保留计数、记录、列表完成状态和隐藏配置；解除引用不删除目标', async () => {
+test('编辑收敛旧记录并保留计数、列表完成状态和隐藏配置；解除引用不删除目标', async () => {
   const { service, repository } = fixture();
   const target = await service.createMatter(request('关联目标'));
   const draft = service.loadEditor('');
-  Object.assign(draft, { title: '事项', types: [ModuleType.Counter, ModuleType.Checklist, ModuleType.EventRecord],
-    initial: '3', step: '2', recordName: '打卡', items: [
+  Object.assign(draft, { title: '事项', types: [ModuleType.Counter, ModuleType.Checklist, ModuleType.Tag],
+    counterMode: 'amount', unit: '页', initial: '3', step: '2', step2: '10', tagId: 'study', items: [
       { id: 'item', title: '文字' }, { id: 'ref', title: '关联目标', targetId: target.matterId }] });
   assert.equal((await service.saveEditor(draft, '')).success, true);
   const edit = service.loadEditor(draft.id);
   const state = repository.readState();
   state.checklistItems[0].completed = true;
-  state.counterEntries.push({ id: 'count', matterId: draft.id, value: 5, timestamp: 42 });
-  state.eventRecords.push({ id: 'record', matterId: draft.id, timestamp: 42 });
+  state.counterEntries.push({ id: 'count', matterId: draft.id, value: 5, timestamp: 42, note: '晨读' });
+  state.eventRecords.push({ id: 'record', matterId: draft.id, timestamp: 43, note: '旧记录' });
   await repository.transact({ id: 'fixture-update', fingerprint: JSON.stringify(state) }, current => Object.assign(current, state));
   edit.title = '新名称';
   edit.types = [ModuleType.Checklist];
@@ -201,15 +203,21 @@ test('编辑保留计数、记录、列表完成状态和隐藏配置；解除�
   const saved = repository.readState();
   assert.equal(saved.checklistItems.length, 1);
   assert.equal(saved.checklistItems[0].completed, true);
-  assert.deepEqual(saved.counterEntries, state.counterEntries);
-  assert.deepEqual(saved.eventRecords, state.eventRecords);
+  assert.equal(service.findMatter(draft.id).tagId, undefined);
   assert.ok(service.findMatter(target.matterId));
   const restored = service.loadEditor(draft.id);
   assert.equal(restored.step, '2');
-  assert.equal(restored.recordName, '打卡');
-  restored.types.push(ModuleType.Counter, ModuleType.EventRecord);
+  assert.equal(restored.step2, '10');
+  assert.equal(restored.unit, '页');
+  assert.equal(restored.tagId, 'study');
+  restored.types.push(ModuleType.Counter, ModuleType.Tag);
   assert.equal((await service.saveEditor(restored, '')).success, true);
   assert.equal(service.findMatter(draft.id).disabledModules.length, 0);
+  assert.equal(service.findMatter(draft.id).tagId, 'study');
+  // 重新启用并保存 Counter 时，旧 eventRecords 无损并入统一的 counterEntries
+  const finalState = repository.readState();
+  assert.equal(finalState.eventRecords.length, 0);
+  assert.equal(finalState.counterEntries.length, 2);
 });
 
 test('旧编辑草稿、无效引用或计数均不覆盖原事项', async () => {
@@ -249,4 +257,145 @@ test('共享表单提交响应丢失后用恢复的草稿重试', async () => {
   assert.equal((await service.saveEditor(JSON.parse(savedDraft), '')).success, true);
   assert.equal(service.activeMatters().length, 1);
   assert.equal(service.loadEditor(draft.id).items.length, 1);
+});
+
+test('时间段与倒数天数可同时开启；纯轻日程在主页按日期筛选浮现，不挤占默认常驻列表', async () => {
+  const { MatterState } = bundle.modules['domain/MatterState'];
+  const { TimelineRepeat, TimelineEditScope, TimelineDeleteScope, TimelineAttachmentKind } = bundle.modules['contracts/TimelineService'];
+  const { service, repository } = fixture();
+
+  const examDay = new Date();
+  examDay.setDate(examDay.getDate() + 5);
+  examDay.setHours(9, 0, 0, 0);
+  const examDraft = service.loadEditor('');
+  Object.assign(examDraft, {
+    title: '期末考试',
+    types: [ModuleType.Deadline, ModuleType.Tag, ModuleType.Note],
+    span: 'range',
+    timestamp: examDay.getTime(),
+    endAt: examDay.getTime() + 120 * 60000,
+    dayCountMode: 'countdown',
+    reminderMinutes: 30,
+    tagId: 'study',
+    note: '准考证 https://example.com',
+    attachments: [{ id: 'att_1', name: '考场图.png', kind: TimelineAttachmentKind.Image, source: 'attach_abc.png' }]
+  });
+  assert.equal((await service.saveEditor(examDraft, '')).success, true);
+
+  // 创建一个每周重复的纯时间段轻日程（不开启倒数）
+  const errDraft = service.loadEditor('');
+  const todaySlot = new Date();
+  todaySlot.setHours(14, 0, 0, 0);
+  Object.assign(errDraft, {
+    title: '取快递与例会',
+    types: [ModuleType.Deadline],
+    span: 'range',
+    timestamp: todaySlot.getTime(),
+    endAt: todaySlot.getTime() + 60 * 60000,
+    dayCountMode: 'none',
+    repeat: TimelineRepeat.Daily
+  });
+  assert.equal((await service.saveEditor(errDraft, '')).success, true);
+
+  // 常驻列表只含“期末考试”，不含纯轻日程“取快递与例会”
+  assert.deepEqual(service.residentActiveMatters().map(m => m.title), ['期末考试']);
+  // 时间线投影同时包含两者
+  const view = new MatterState(repository.readState());
+  assert.equal(view.timelineBlocks().length, 2);
+  assert.equal(view.todayLightScheduleCount(todaySlot.getTime()), 1);
+  // 按今天筛选可拿到今天的轻日程，按 5 天后筛选可同时拿到考试与每天重复的轻日程
+  assert.deepEqual(service.mattersForDay(todaySlot.getTime()).map(m => m.title), ['取快递与例会']);
+  assert.deepEqual(service.mattersForDay(examDay.getTime()).map(m => m.title), ['期末考试', '取快递与例会']);
+
+  // 单次改期例外编辑与单日排除删除
+  const occEdit = service.loadEditor(errDraft.id, todaySlot.getTime());
+  assert.equal(occEdit.isSeries, true);
+  occEdit.title = '今天改期例会';
+  occEdit.editScope = TimelineEditScope.One;
+  assert.equal((await service.saveEditor(occEdit, '')).success, true);
+  const tomorrow = new Date(todaySlot.getTime() + 86400000);
+  await repository.transact({ id: 'del-one', fingerprint: 'del-one' }, state => {
+    new MatterState(state).deleteScheduleOccurrence(errDraft.id, TimelineDeleteScope.One, tomorrow.getTime());
+  });
+  assert.equal(service.mattersForDay(tomorrow.getTime()).length, 0);
+  assert.equal(service.mattersForDay(todaySlot.getTime())[0].title, '今天改期例会');
+});
+
+test('计数三模式（计次/计量/每日打卡）、单次短备注、撤回纠错与纯文字标签、旧时间线导入', async () => {
+  const { MatterState } = bundle.modules['domain/MatterState'];
+  const { service, repository } = fixture();
+
+  // 标签保存自动剥离 emoji 且拒绝空名称或重名
+  const savedTag = await service.saveTag({ id: 'reading', name: '📚 深度阅读 ✨', color: '#2e6e62' });
+  assert.equal(savedTag.name, '深度阅读');
+  assert.equal(savedTag.color, '#2E6E62');
+  await assert.rejects(service.saveTag({ id: 'dup', name: '深度阅读', color: '#3B5F86' }), /已存在/);
+
+  // 每日打卡模式支持打卡、取消今日打卡与连续天数统计
+  const habit = service.loadEditor('');
+  Object.assign(habit, { title: '早起打卡', types: [ModuleType.Counter], counterMode: 'daily_once' });
+  await service.saveEditor(habit, '');
+
+  await repository.transact({ id: 'habit-1', fingerprint: 'h1' }, state => {
+    const ms = new MatterState(state);
+    const yesterday = Date.now() - 86400000;
+    state.counterEntries.push({ id: 'y1', matterId: habit.id, value: 1, timestamp: yesterday });
+    assert.equal(ms.toggleDailyOnce(habit.id, '6:30 起床'), true);
+    assert.equal(ms.counterStreakDays(habit.id), 2);
+    assert.equal(ms.toggleDailyOnce(habit.id), false);
+    assert.equal(ms.isDailyDoneToday(habit.id), false);
+  });
+
+  // 计次带单次备注与撤回单条记录
+  const tally = service.loadEditor('');
+  Object.assign(tally, { title: '力量训练', types: [ModuleType.Counter], counterMode: 'tally', unit: '组' });
+  await service.saveEditor(tally, '');
+  await repository.transact({ id: 'tally-1', fingerprint: 't1' }, state => {
+    const ms = new MatterState(state);
+    ms.addCounterEntry(tally.id, 1, '深蹲 60kg');
+    ms.addCounterEntry(tally.id, 1, '误触多点了一次');
+    assert.equal(ms.counterTotal(tally.id), 2);
+    const entries = ms.counterEntriesFor(tally.id);
+    ms.removeCounterEntry(entries[1].id);
+    assert.equal(ms.counterTotal(tally.id), 1);
+    assert.equal(ms.counterEntriesFor(tally.id)[0].note, '深蹲 60kg');
+  });
+
+  // 旧事项含 description 和 location 在加载编辑器时自动无损合并进备注
+  await repository.transact({ id: 'legacy-desc', fingerprint: 'ld' }, state => {
+    state.matters.push({
+      id: 'old_m',
+      title: '旧事项',
+      description: '旧顶层说明',
+      createdAt: 1,
+      updatedAt: 1,
+      archived: false,
+      orderIndex: 99,
+      enabledModules: [{
+        id: 'mod_d',
+        matterId: 'old_m',
+        moduleType: ModuleType.Deadline,
+        configJson: JSON.stringify({ timestamp: 1800000000000, hasTime: false, location: '二教 201' }),
+        createdAt: 1,
+        updatedAt: 1
+      }]
+    });
+  });
+  const loadedOld = service.loadEditor('old_m');
+  assert.ok(loadedOld.types.includes(ModuleType.Note));
+  assert.match(loadedOld.note, /旧顶层说明/);
+  assert.match(loadedOld.note, /二教 201/);
+
+  // 旧 todone_timeline 数据幂等导入并自动清洗标签 emoji
+  await repository.transact({ id: 'import-tl', fingerprint: 'itl' }, state => {
+    const ms = new MatterState(state);
+    const added = ms.importLegacyTimeline(
+      [{ id: 'tl_1', title: '独立旧日程', startAt: 1000, endAt: 61000, note: '旧日程备注', tagId: 'old_tag' }],
+      [{ id: 'old_tag', name: '🎯 专项', color: '#4384bb' }]
+    );
+    assert.equal(added, 1);
+    assert.equal(ms.importLegacyTimeline([{ id: 'tl_1', title: '重复导入', startAt: 1000, endAt: 61000, note: '' }], []), 0);
+    assert.equal(ms.findTag('old_tag').name, '专项');
+    assert.equal(ms.findMatter('tl_1').title, '独立旧日程');
+  });
 });

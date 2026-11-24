@@ -8,7 +8,7 @@ import { stripTypeScriptTypes } from 'node:module';
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../app/entry/src/main/ets');
 const sources = [
   'common/DateFormat', 'model/Types', 'model/Defaults', 'contracts/MatterService',
-  'contracts/MatterPersistence', 'domain/MatterSnapshot', 'domain/MatterState', 'domain/TransactionalMatterRepository',
+  'contracts/MatterPersistence', 'domain/MatterSnapshot', 'domain/MatterSchedule', 'domain/MatterState', 'domain/TransactionalMatterRepository',
   'domain/MatterLinks', 'domain/MatterEditor', 'domain/DefaultMatterService', 'mocks/MockMatterService',
   'contracts/TimelineService', 'store/StateStorage', 'domain/TimelineReadError', 'domain/TimelineRecurrence', 'domain/TimelineReminderPlan',
   'domain/DefaultTimelineService', 'domain/TimelineLayout', 'domain/TimelineDayRing',

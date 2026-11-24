@@ -17,6 +17,8 @@ export struct TimelineBrowseCalendar {
   @Prop fullRowHeight: number = 80;
   @Prop expanded: boolean = false;
   @Prop showScheduleRings: boolean = true;
+  @Prop showScheduleDots: boolean = false;
+  @Prop highlightSelection: boolean = true;
   @Prop rowHeight: number = 40;
   @Prop maxRowsHeight: number = 240;
   rowsScroller: Scroller = new Scroller();
@@ -57,7 +59,8 @@ export struct TimelineBrowseCalendar {
   private Page(page: number) {
     TimelineCalendarRows({ month: this.monthFor(page), anchorDay: this.anchorFor(page), day: this.day,
       today: this.today, blocks: this.blocks, tags: this.tags, expanded: this.expanded, progress: this.progress,
-      detailedCalendar: true, showScheduleRings: this.showScheduleRings, prepareDetail: this.expanded && page === this.page,
+      detailedCalendar: true, showScheduleRings: this.showScheduleRings, showScheduleDots: this.showScheduleDots,
+      highlightSelection: this.highlightSelection, prepareDetail: this.expanded && page === this.page,
       detail: page === this.page || this.detail === 1 ? this.detail : 0, fullRowHeight: this.fullRowHeight,
       rowHeight: this.rowHeight, onPick: (day: number) => this.onSelectDay(day) });
   }

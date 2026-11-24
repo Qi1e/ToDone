@@ -12,6 +12,8 @@ function moduleIconPath(type: ModuleType): string {
       return 'M4 7 L6.2 9.2 L9.5 5.8 M12 7.5 H20 M4 16.5 L6.2 18.7 L9.5 15.3 M12 17 H20';
     case ModuleType.EventRecord:
       return 'M12 3.5 A8.5 8.5 0 1 0 12 20.5 A8.5 8.5 0 1 0 12 3.5 Z M12 7.5 V12 L15 14';
+    case ModuleType.Tag:
+      return 'M4 5 H12 L19.5 12.5 L12.5 19.5 L4 11 Z M8.5 8.5 H8.6';
     case ModuleType.Note:
     default:
       return 'M5 4 H19 V20 H5 Z M8 9 H16 M8 13 H16 M8 17 H13';

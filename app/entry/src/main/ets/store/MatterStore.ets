@@ -1,12 +1,31 @@
 import { common } from '@kit.AbilityKit';
+import {
+  TimelineAttachment,
+  TimelineBlock,
+  TimelineDeleteScope,
+  TimelineTag
+} from '../contracts/TimelineService';
 import { MatterRepository } from '../contracts/MatterService';
 import { MatterOperation } from '../contracts/MatterPersistence';
+import { DefaultTimelineService } from '../domain/DefaultTimelineService';
 import { MatterState } from '../domain/MatterState';
 import { MatterDataError, emptyMatterState } from '../domain/MatterSnapshot';
 import { TransactionalMatterRepository } from '../domain/TransactionalMatterRepository';
 import { createId } from '../model/Defaults';
-import { AppState, ChecklistItem, CounterConfig, CreateMatterIntent, DateMode, DeadlineConfig,
-  EventRecordEntry, Matter, ModuleType } from '../model/Types';
+import {
+  ActiveCounterMode,
+  AppState,
+  ChecklistItem,
+  CounterConfig,
+  CounterEntry,
+  CreateMatterIntent,
+  DateMode,
+  DeadlineConfig,
+  EventRecordEntry,
+  Matter,
+  ModuleType
+} from '../model/Types';
+import { PreferencesStateStorage } from './PreferencesStateStorage';
 import { RdbMatterPersistence } from './RdbMatterPersistence';
 
 export class MatterStore implements MatterRepository {
@@ -14,6 +33,7 @@ export class MatterStore implements MatterRepository {
   private repository?: TransactionalMatterRepository;
   private listeners: Set<() => void> = new Set();
   private failedOperations: Map<string, MatterOperation> = new Map();
+  private legacyTimelineWarning: string = '';
 
   static getInstance(): MatterStore {
     return MatterStore.instance;
@@ -22,6 +42,48 @@ export class MatterStore implements MatterRepository {
   async init(context: common.UIAbilityContext | common.FormExtensionContext): Promise<void> {
     if (!this.repository) this.repository = new TransactionalMatterRepository(new RdbMatterPersistence(context));
     await this.reload();
+    await this.importLegacyTimelineIfNeeded(context);
+  }
+
+  legacyImportWarning(): string {
+    return this.legacyTimelineWarning;
+  }
+
+  private async importLegacyTimelineIfNeeded(
+    context: common.UIAbilityContext | common.FormExtensionContext
+  ): Promise<void> {
+    if (!this.repository || this.readState().timelineImported) return;
+    try {
+      const storage = new PreferencesStateStorage(
+        context as common.UIAbilityContext,
+        'todone_timeline',
+        'timeline_blocks_v1'
+      );
+      const raw = storage.read();
+      if (!raw) {
+        await this.transact(
+          { id: 'legacy-timeline-empty', fingerprint: 'legacy-timeline:empty' },
+          (state: AppState): void => { state.timelineImported = true; }
+        );
+        this.legacyTimelineWarning = '';
+        return;
+      }
+      const parser = new DefaultTimelineService(storage);
+      const blocks = parser.list();
+      const tags = parser.listTags();
+      await this.transact(
+        { id: 'legacy-timeline-import-v1', fingerprint: 'legacy-timeline:import-v1' },
+        (state: AppState): number => {
+          if (state.timelineImported) return 0;
+          return new MatterState(state).importLegacyTimeline(blocks, tags);
+        }
+      );
+      this.legacyTimelineWarning = '';
+    } catch (error) {
+      // 旧时间线文件若损坏则保留原文件、不置位 timelineImported，以便修复后重试。
+      this.legacyTimelineWarning = '旧时间线存档未能导入，原文件已保留';
+      console.warn('ToDone legacy timeline import skipped');
+    }
   }
 
   async reload(): Promise<void> {
@@ -83,6 +145,55 @@ export class MatterStore implements MatterRepository {
     return this.view().activeMatters();
   }
 
+  residentActiveMatters(): Matter[] {
+    return this.view().residentActiveMatters();
+  }
+
+  isLightSchedule(matter: Matter): boolean {
+    return this.view().isLightSchedule(matter);
+  }
+
+  mattersForDay(dayTimestamp: number): Matter[] {
+    return this.view().mattersForDay(dayTimestamp);
+  }
+
+  dayScheduleCount(dayTimestamp: number): number {
+    return this.view().dayScheduleCount(dayTimestamp);
+  }
+
+  todayLightScheduleCount(todayTimestamp?: number): number {
+    return this.view().todayLightScheduleCount(todayTimestamp);
+  }
+
+  timelineBlocks(): TimelineBlock[] {
+    return this.view().timelineBlocks();
+  }
+
+  reminderBlocks(): TimelineBlock[] {
+    return this.view().reminderBlocks();
+  }
+
+  allReferencedAttachments(): TimelineAttachment[] {
+    return this.view().allReferencedAttachments();
+  }
+
+  listTags(): TimelineTag[] {
+    return this.view().listTags();
+  }
+
+  findTag(tagId?: string): TimelineTag | undefined {
+    return this.view().findTag(tagId);
+  }
+
+  matterTag(matter: Matter): TimelineTag | undefined {
+    return this.view().matterTag(matter);
+  }
+
+  saveTag(tag: TimelineTag, operationId?: string): Promise<TimelineTag> {
+    return this.change('saveTag', JSON.stringify([tag]),
+      (state: MatterState) => state.saveTag(tag), operationId);
+  }
+
   archivedMatters(): Matter[] {
     return this.view().archivedMatters();
   }
@@ -109,6 +220,12 @@ export class MatterStore implements MatterRepository {
   deleteMatter(id: string, operationId?: string): Promise<void> {
     return this.change('deleteMatter', JSON.stringify([id]),
       (state: MatterState) => state.deleteMatter(id), operationId);
+  }
+
+  deleteScheduleOccurrence(id: string, scope: TimelineDeleteScope = TimelineDeleteScope.All,
+    occurrenceStart?: number, operationId?: string): Promise<void> {
+    return this.change('deleteScheduleOccurrence', JSON.stringify([id, scope, occurrenceStart]),
+      (state: MatterState) => state.deleteScheduleOccurrence(id, scope, occurrenceStart), operationId);
   }
 
   moveMatterByDelta(id: string, delta: number, operationId?: string): Promise<void> {
@@ -144,6 +261,10 @@ export class MatterStore implements MatterRepository {
     return this.view().hasModule(matter, type);
   }
 
+  hasCounterLikeModule(matter: Matter): boolean {
+    return this.view().hasCounterLikeModule(matter);
+  }
+
   toggleModule(matterId: string, type: ModuleType, operationId?: string): Promise<void> {
     return this.change('toggleModule', JSON.stringify([matterId, type]),
       (state: MatterState) => state.toggleModule(matterId, type), operationId);
@@ -162,14 +283,48 @@ export class MatterStore implements MatterRepository {
     return this.view().todayEventCount(matterId);
   }
 
-  addCounterEntry(matterId: string, value: number, operationId?: string): Promise<void> {
-    return this.change('addCounterEntry', JSON.stringify([matterId, value]),
-      (state: MatterState) => state.addCounterEntry(matterId, value), operationId);
+  addCounterEntry(matterId: string, value: number, operationId?: string, note?: string): Promise<void> {
+    return this.change('addCounterEntry', JSON.stringify([matterId, value, note]),
+      (state: MatterState) => state.addCounterEntry(matterId, value, note), operationId);
+  }
+
+  removeCounterEntry(entryId: string, operationId?: string): Promise<void> {
+    return this.change('removeCounterEntry', JSON.stringify([entryId]),
+      (state: MatterState) => state.removeCounterEntry(entryId), operationId);
+  }
+
+  counterEntriesFor(matterId: string, limit: number = 12): CounterEntry[] {
+    return this.view().counterEntriesFor(matterId, limit);
+  }
+
+  isDailyDoneToday(matterId: string): boolean {
+    return this.view().isDailyDoneToday(matterId);
+  }
+
+  toggleDailyOnce(matterId: string, note?: string, operationId?: string): Promise<boolean> {
+    return this.change('toggleDailyOnce', JSON.stringify([matterId, note]),
+      (state: MatterState) => state.toggleDailyOnce(matterId, note), operationId);
   }
 
   markDailyOnce(matterId: string, operationId?: string): Promise<void> {
     return this.change('markDailyOnce', JSON.stringify([matterId]),
       (state: MatterState) => state.markDailyOnce(matterId), operationId);
+  }
+
+  counterStreakDays(matterId: string): number {
+    return this.view().counterStreakDays(matterId);
+  }
+
+  activeCounterMode(matterId: string): ActiveCounterMode {
+    return this.view().activeCounterMode(matterId);
+  }
+
+  counterUnit(matterId: string): string {
+    return this.view().counterUnit(matterId);
+  }
+
+  counterQuickSteps(matterId: string): number[] {
+    return this.view().counterQuickSteps(matterId);
   }
 
   counterSettings(matterId: string): CounterConfig {
@@ -186,6 +341,10 @@ export class MatterStore implements MatterRepository {
 
   counterToday(matterId: string): number {
     return this.view().counterToday(matterId);
+  }
+
+  counterSummaryText(matterId: string): string {
+    return this.view().counterSummaryText(matterId);
   }
 
   getProgressPercent(matterId: string): number {
@@ -214,9 +373,13 @@ export class MatterStore implements MatterRepository {
     return this.view().getNote(matterId);
   }
 
-  setNote(matterId: string, text: string, operationId?: string): Promise<void> {
-    return this.change('setNote', JSON.stringify([matterId, text]),
-      (state: MatterState) => state.setNote(matterId, text), operationId);
+  getAttachments(matterId: string): TimelineAttachment[] {
+    return this.view().getAttachments(matterId);
+  }
+
+  setNote(matterId: string, text: string, operationId?: string, attachments?: TimelineAttachment[]): Promise<void> {
+    return this.change('setNote', JSON.stringify([matterId, text, attachments]),
+      (state: MatterState) => state.setNote(matterId, text, attachments), operationId);
   }
 
   checklistItemsFor(matterId: string): ChecklistItem[] {

@@ -26,6 +26,21 @@ function unlinkIfPresent(path: string): void {
   }
 }
 
+export function cleanMatterAttachmentFiles(context: common.UIAbilityContext, referenced: TimelineAttachment[]): void {
+  try {
+    const dir = context.filesDir + FOLDER;
+    if (!fs.accessSync(dir)) return;
+    const keep = new Set<string>();
+    keepSources(referenced, keep);
+    sessions.forEach((sources: Set<string>) => sources.forEach((source: string) => keep.add(source)));
+    for (const name of fs.listFileSync(dir)) {
+      if (OWN_FILE.test(name) && !keep.has(name) && !copying.has(name)) unlinkIfPresent(dir + '/' + name);
+    }
+  } catch (error) {
+    console.warn('事项附件清理将在下次读取后重试');
+  }
+}
+
 // 仅在确认已读到存档后调用。枚举、检查与移除在同一轮事件中完成。
 export function cleanTimelineAttachmentFiles(context: common.UIAbilityContext, blocks: TimelineBlock[]): void {
   try {
@@ -97,6 +112,12 @@ export class TimelineAttachmentSession {
     this.ended = true;
     sessions.delete(this);
     cleanTimelineAttachmentFiles(context, blocks);
+  }
+
+  finishMatter(context: common.UIAbilityContext, referenced: TimelineAttachment[]): void {
+    this.ended = true;
+    sessions.delete(this);
+    cleanMatterAttachmentFiles(context, referenced);
   }
 
   async pick(context: common.UIAbilityContext, kind: TimelineAttachmentKind): Promise<TimelineAttachment | undefined> {

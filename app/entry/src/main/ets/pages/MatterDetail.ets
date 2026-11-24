@@ -1,9 +1,7 @@
-import { matterErrorMessage } from '../domain/MatterSnapshot';
-import { dateSummary } from '../common/DateFormat';
 import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
 import { MatterServices } from '../application/MatterServices';
-import { formatDateTime } from '../common/DateFormat';
+import { dateSummary, formatDateTime, timeConfigTitle } from '../common/DateFormat';
 import {
   Colors,
   Radius,
@@ -14,10 +12,23 @@ import {
   resolveClusterColor
 } from '../common/Theme';
 import { ModuleIcon } from '../components/ModuleIcon';
+import { TimelineAttachmentList } from '../components/TimelineAttachments';
+import { TimelineLinkedNote } from '../components/TimelineLinkedNote';
+import {
+  TimelineAttachment,
+  TimelineRepeat,
+  timelineReminderLabel,
+  timelineRepeatLabel,
+  TimelineTag
+} from '../contracts/TimelineService';
+import { matterErrorMessage } from '../domain/MatterSnapshot';
+import { TimelineNotePart, timelineNoteParts } from '../domain/TimelineNoteLinks';
 import { moduleLabel } from '../model/Defaults';
 import {
+  ActiveCounterMode,
   ChecklistItem,
-  EventRecordEntry,
+  CounterEntry,
+  DeadlineConfig,
   Matter,
   ModuleInstance,
   ModuleType
@@ -26,6 +37,7 @@ import { MatterStore } from '../store/MatterStore';
 
 interface MatterRouteParams {
   matterId?: string;
+  occurrenceStart?: number;
 }
 
 @Entry
@@ -35,10 +47,12 @@ struct MatterDetail {
   private store: MatterStore = MatterStore.getInstance();
 
   @State matterId: string = '';
+  @State occurrenceStart?: number = undefined;
   @State titleInput: string = '';
-  @State descriptionInput: string = '';
   @State customCounterInput: string = '';
-  @State noteInput: string = '';
+  @State entryNoteInput: string = '';
+  @State noteText: string = '';
+  @State noteAttachments: TimelineAttachment[] = [];
   @State checklistInput: string = '';
   @State changedTick: number = 0;
   @State enabledModuleSnapshot: ModuleInstance[] = [];
@@ -47,8 +61,9 @@ struct MatterDetail {
   private unsubscribe?: () => void;
 
   aboutToAppear(): void {
-    const params = router.getParams() as MatterRouteParams;
-    this.matterId = params.matterId ?? '';
+    const params = router.getParams() as MatterRouteParams | undefined;
+    this.matterId = params?.matterId ?? '';
+    this.occurrenceStart = params?.occurrenceStart;
     this.unsubscribe = this.store.subscribe(() => this.loadFields());
     this.load();
   }
@@ -82,8 +97,8 @@ struct MatterDetail {
       return;
     }
     this.titleInput = matter.title;
-    this.descriptionInput = matter.description ?? '';
-    this.noteInput = this.store.getNote(matter.id);
+    this.noteText = this.store.getNote(matter.id);
+    this.noteAttachments = this.store.getAttachments(matter.id);
     this.enabledModuleSnapshot = matter.enabledModules.slice();
     this.changedTick++;
   }
@@ -101,15 +116,35 @@ struct MatterDetail {
     return this.currentMatter() !== undefined;
   }
 
-  private enabledModules(): ModuleInstance[] {
-    return this.enabledModuleSnapshot.filter((module: ModuleInstance) => {
-      return module.moduleType !== ModuleType.Countdown && module.moduleType !== ModuleType.Progress;
-    });
+  private displayModuleTypes(): ModuleType[] {
+    const result: ModuleType[] = [];
+    const pushOnce = (t: ModuleType): void => {
+      if (!result.includes(t)) result.push(t);
+    };
+    for (const mod of this.enabledModuleSnapshot) {
+      if (mod.moduleType === ModuleType.Countdown || mod.moduleType === ModuleType.Progress ||
+        mod.moduleType === ModuleType.Tag) {
+        continue;
+      }
+      if (mod.moduleType === ModuleType.EventRecord) {
+        pushOnce(ModuleType.Counter);
+      } else {
+        pushOnce(mod.moduleType);
+      }
+    }
+    if ((this.noteText.trim().length > 0 || this.noteAttachments.length > 0) && !result.includes(ModuleType.Note)) {
+      pushOnce(ModuleType.Note);
+    }
+    return result;
+  }
+
+  private deadlineConfig(): DeadlineConfig | undefined {
+    return this.store.getDeadline(this.matterId);
   }
 
   private deadlineDisplayText(): string {
-    const deadline = this.store.getDeadline(this.matterId);
-    return deadline ? dateSummary(deadline) : '未设置日期';
+    const deadline = this.deadlineConfig();
+    return deadline ? dateSummary(deadline) : '未设置时间';
   }
 
   private isDeadlineUrgent(): boolean {
@@ -123,6 +158,28 @@ struct MatterDetail {
       return undefined;
     }
     return resolveClusterColor(this.store.clusterColor(matter.clusterId));
+  }
+
+  private currentTag(): TimelineTag | undefined {
+    const matter = this.currentMatter();
+    return matter ? this.store.matterTag(matter) : undefined;
+  }
+
+  private noteHasLinks(text: string): boolean {
+    return timelineNoteParts(text).some((p: TimelineNotePart) => p.href !== undefined);
+  }
+
+  private panelTitle(type: ModuleType): string {
+    if (type === ModuleType.Deadline) {
+      return timeConfigTitle(this.deadlineConfig());
+    }
+    if (type === ModuleType.Counter) {
+      const mode = this.store.activeCounterMode(this.matterId);
+      if (mode === 'tally') return '计次';
+      if (mode === 'daily_once') return '每日打卡';
+      return '计数';
+    }
+    return moduleLabel(type);
   }
 
   private async perform(write: () => Promise<void>): Promise<void> {
@@ -163,7 +220,7 @@ struct MatterDetail {
             .width('100%')
             .alignItems(HorizontalAlign.Start);
           } else if (this.currentMatter()) {
-            Column({ space: Space.sm }) {
+            Column({ space: Space.xs }) {
               Row({ space: Space.sm }) {
                 if (this.currentClusterColor()) {
                   Column()
@@ -181,12 +238,21 @@ struct MatterDetail {
               .width('100%')
               .alignItems(VerticalAlign.Center);
 
-              if (this.descriptionInput) {
-                Text(this.descriptionInput)
-                  .fontSize(TypeSize.bodySmall)
-                  .fontWeight(TypeWeight.regular)
-                  .fontColor(Colors.inkSoft)
-                  .width('100%');
+              if (this.currentTag()) {
+                Row({ space: 6 }) {
+                  Row()
+                    .width(8)
+                    .height(8)
+                    .borderRadius(4)
+                    .backgroundColor(this.currentTag()?.color ?? Colors.ink);
+                  Text(this.currentTag()?.name ?? '')
+                    .fontSize(TypeSize.bodySmall)
+                    .fontColor(Colors.inkSoft);
+                }
+                .padding({ left: Space.sm, right: Space.sm, top: 4, bottom: 4 })
+                .backgroundColor(Colors.wash)
+                .borderRadius(Radius.chip)
+                .alignItems(VerticalAlign.Center);
               }
             }
             .width('100%')
@@ -250,7 +316,10 @@ struct MatterDetail {
           .padding({ left: Space.md, right: 0 })
           .accessibilityText('编辑事项')
           .onClick(() => {
-            router.pushUrl({ url: 'pages/CreateMatter', params: { matterId: this.matterId } });
+            router.pushUrl({
+              url: 'pages/CreateMatter',
+              params: { matterId: this.matterId, occurrenceStart: this.occurrenceStart }
+            });
           });
       }
     }
@@ -262,9 +331,17 @@ struct MatterDetail {
   @Builder
   private EnabledModules() {
     if (this.hasCurrentMatter()) {
-      ForEach(this.enabledModules(), (module: ModuleInstance) => {
-        this.ModulePanel(module.moduleType);
-      }, (module: ModuleInstance) => module.id + '_' + this.changedTick);
+      if (this.displayModuleTypes().length === 0) {
+        Text('暂未启用附加信息，点击右上角「编辑」可添加时间、标签、计数、备注或列表。')
+          .fontSize(TypeSize.bodySmall)
+          .fontColor(Colors.inkMuted)
+          .width('100%')
+          .padding({ top: Space.md });
+      } else {
+        ForEach(this.displayModuleTypes(), (type: ModuleType) => {
+          this.ModulePanel(type);
+        }, (type: ModuleType) => `${type}_${this.changedTick}`);
+      }
     }
   }
 
@@ -273,9 +350,7 @@ struct MatterDetail {
     Column({ space: Space.md }) {
       Row({ space: Space.sm }) {
         ModuleIcon({ moduleType: type, ink: Colors.inkSoft, iconSize: 18 });
-        Text(type === ModuleType.EventRecord
-          ? (this.enabledModuleSnapshot.find((m: ModuleInstance) => m.moduleType === type)?.name || moduleLabel(type))
-          : moduleLabel(type))
+        Text(this.panelTitle(type))
           .fontSize(TypeSize.title)
           .fontWeight(TypeWeight.semibold)
           .fontColor(Colors.ink)
@@ -284,9 +359,6 @@ struct MatterDetail {
       .width('100%')
       .alignItems(VerticalAlign.Center);
 
-      if (type === ModuleType.EventRecord) {
-        this.EventRecordModule();
-      }
       if (type === ModuleType.Counter) {
         this.CounterModule();
       }
@@ -307,176 +379,307 @@ struct MatterDetail {
   }
 
   @Builder
-  private EventRecordModule() {
-    Button('记录一次')
-      .type(ButtonType.Normal)
-      .constraintSize({ minHeight: 40 })
-      .fontSize(TypeSize.body)
-      .fontWeight(TypeWeight.semibold)
-      .fontColor(Colors.ink)
-      .backgroundColor(Colors.wash)
-      .borderRadius(Radius.card)
-      .padding({ left: Space.lg, right: Space.lg })
-      .onClick(() => {
-        this.perform(async (): Promise<void> => {
-          await this.store.addEventRecord(this.matterId);
-          this.refreshOnly();
-          this.refreshCards('已记录一次');
-        });
-      });
-
-    ForEach(this.store.eventRecordsFor(this.matterId), (entry: EventRecordEntry) => {
-      Text(formatDateTime(entry.timestamp))
-        .fontSize(TypeSize.body)
-        .fontWeight(TypeWeight.regular)
-        .fontColor(Colors.inkSoft)
-        .fontFeature(TABULAR_NUMS)
-        .width('100%')
-        .padding({ top: Space.xs, bottom: Space.xs });
-    }, (entry: EventRecordEntry) => entry.id);
+  private CounterStatItem(label: string, value: string, highlight: boolean = false) {
+    Column({ space: 2 }) {
+      Text(label)
+        .fontSize(TypeSize.meta)
+        .fontColor(Colors.inkMuted);
+      Text(value)
+        .fontSize(TypeSize.figure)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(highlight ? Colors.ink : Colors.inkSoft)
+        .fontFeature(TABULAR_NUMS);
+    }
+    .alignItems(HorizontalAlign.Start);
   }
 
   @Builder
   private CounterModule() {
+    Column({ space: Space.md }) {
+      this.CounterFigures(this.store.activeCounterMode(this.matterId), this.store.counterUnit(this.matterId));
+      this.CounterControls(this.store.activeCounterMode(this.matterId), this.store.counterUnit(this.matterId));
+      this.CounterHistoryList(this.store.counterUnit(this.matterId));
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start);
+  }
+
+  @Builder
+  private CounterFigures(mode: ActiveCounterMode, unit: string) {
     Row({ space: Space.section }) {
-      Column({ space: Space.xs }) {
-        Text('今日')
-          .fontSize(TypeSize.meta)
-          .fontWeight(TypeWeight.regular)
-          .fontColor(Colors.inkMuted);
-        Text(`${this.store.counterToday(this.matterId)}`)
-          .fontSize(TypeSize.figure)
+      if (mode === 'daily_once') {
+        this.CounterStatItem('连续打卡', `${this.store.counterStreakDays(this.matterId)} 天`, true);
+        this.CounterStatItem('累计完成', `${this.store.counterTotal(this.matterId)} 天`);
+      } else {
+        this.CounterStatItem('今日', `${this.store.counterToday(this.matterId)}${unit ? ' ' + unit : ''}`, true);
+        this.CounterStatItem('累计', `${this.store.counterTotal(this.matterId)}${unit ? ' ' + unit : ''}`);
+        if (this.store.counterStreakDays(this.matterId) > 1) {
+          this.CounterStatItem('连续', `${this.store.counterStreakDays(this.matterId)} 天`);
+        }
+      }
+    }
+    .width('100%');
+  }
+
+  @Builder
+  private CounterControls(mode: ActiveCounterMode, unit: string) {
+    if (mode === 'daily_once') {
+      Row({ space: Space.sm }) {
+        if (!this.store.isDailyDoneToday(this.matterId)) {
+          TextInput({ placeholder: '打卡短记（可选）', text: this.entryNoteInput })
+            .constraintSize({ minHeight: 40 })
+            .fontSize(TypeSize.bodySmall)
+            .fontColor(Colors.ink)
+            .placeholderColor(Colors.inkMuted)
+            .caretColor(Colors.red)
+            .backgroundColor(Colors.wash)
+            .borderRadius(Radius.card)
+            .padding({ left: Space.md, right: Space.md })
+            .maxLength(40)
+            .layoutWeight(1)
+            .onChange((val: string) => { this.entryNoteInput = val; });
+        }
+        Button(this.store.isDailyDoneToday(this.matterId) ? '✓ 今日已打卡（点按取消）' : '今日打卡')
+          .type(ButtonType.Normal)
+          .constraintSize({ minHeight: 42 })
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(this.store.isDailyDoneToday(this.matterId) ? Colors.inkSoft : Colors.bg)
+          .backgroundColor(this.store.isDailyDoneToday(this.matterId) ? Colors.wash : Colors.ink)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.lg, right: Space.lg })
+          .onClick(() => {
+            this.perform(async (): Promise<void> => {
+              const note = this.entryNoteInput.trim();
+              const checked = await this.store.toggleDailyOnce(this.matterId, note);
+              this.entryNoteInput = '';
+              this.refreshOnly();
+              this.refreshCards(checked ? '已完成今日打卡' : '已取消今日打卡');
+            });
+          });
+      }
+      .width('100%');
+    } else if (mode === 'tally') {
+      Row({ space: Space.sm }) {
+        TextInput({ placeholder: '当次短备注（可选）', text: this.entryNoteInput })
+          .constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.bodySmall)
+          .fontColor(Colors.ink)
+          .placeholderColor(Colors.inkMuted)
+          .caretColor(Colors.red)
+          .backgroundColor(Colors.wash)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.md, right: Space.md })
+          .maxLength(40)
+          .layoutWeight(1)
+          .onChange((val: string) => { this.entryNoteInput = val; });
+
+        Button(`记一${unit || '次'}`)
+          .type(ButtonType.Normal)
+          .constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.bg)
+          .backgroundColor(Colors.ink)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.lg, right: Space.lg })
+          .onClick(() => {
+            this.perform(async (): Promise<void> => {
+              const note = this.entryNoteInput.trim();
+              await this.store.addCounterEntry(this.matterId, 1, undefined, note);
+              this.entryNoteInput = '';
+              this.refreshOnly();
+              this.refreshCards('已记录一次');
+            });
+          });
+      }
+      .width('100%');
+    } else {
+      Flex({ wrap: FlexWrap.Wrap }) {
+        ForEach(this.store.counterQuickSteps(this.matterId), (stepVal: number) => {
+          Button(`+${stepVal}${unit ? ' ' + unit : ''}`)
+            .type(ButtonType.Normal)
+            .constraintSize({ minHeight: 40 })
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink)
+            .backgroundColor(Colors.wash)
+            .borderRadius(Radius.card)
+            .padding({ left: Space.lg, right: Space.lg })
+            .margin({ right: Space.sm, bottom: Space.xs })
+            .onClick(() => {
+              this.perform(async (): Promise<void> => {
+                const note = this.entryNoteInput.trim();
+                await this.store.addCounterEntry(this.matterId, stepVal, undefined, note);
+                this.entryNoteInput = '';
+                this.refreshOnly();
+                this.refreshCards(`已增加 ${stepVal}${unit}`);
+              });
+            });
+        }, (stepVal: number) => `step_${stepVal}`);
+      }
+      .width('100%');
+
+      Row({ space: Space.xs }) {
+        TextInput({ placeholder: '自定义数值', text: this.customCounterInput })
+          .width(108)
+          .constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.body)
+          .fontColor(Colors.ink)
+          .placeholderColor(Colors.inkMuted)
+          .caretColor(Colors.red)
+          .type(InputType.NUMBER_DECIMAL)
+          .backgroundColor(Colors.wash)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.sm, right: Space.sm })
+          .onChange((val: string) => { this.customCounterInput = val; });
+        TextInput({ placeholder: '备注（可选）', text: this.entryNoteInput })
+          .constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.bodySmall)
+          .fontColor(Colors.ink)
+          .placeholderColor(Colors.inkMuted)
+          .caretColor(Colors.red)
+          .backgroundColor(Colors.wash)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.sm, right: Space.sm })
+          .maxLength(36)
+          .layoutWeight(1)
+          .onChange((val: string) => { this.entryNoteInput = val; });
+        Button('增加')
+          .type(ButtonType.Normal)
+          .constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.body)
           .fontWeight(TypeWeight.semibold)
           .fontColor(Colors.ink)
-          .fontFeature(TABULAR_NUMS);
+          .backgroundColor(Colors.wash)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.md, right: Space.md })
+          .onClick(() => {
+            this.perform(async (): Promise<void> => {
+              const parsed = Number(this.customCounterInput);
+              if (Number.isFinite(parsed) && parsed !== 0) {
+                const note = this.entryNoteInput.trim();
+                await this.store.addCounterEntry(this.matterId, parsed, undefined, note);
+                this.customCounterInput = '';
+                this.entryNoteInput = '';
+                this.refreshOnly();
+                this.refreshCards('已更新计数');
+              }
+            });
+          });
       }
-      .alignItems(HorizontalAlign.Start);
+      .width('100%');
+    }
+  }
 
-      Column({ space: Space.xs }) {
-        Text('累计')
+  @Builder
+  private CounterHistoryList(unit: string) {
+    if (this.store.counterEntriesFor(this.matterId, 10).length > 0) {
+      Column({ space: 2 }) {
+        Text('最近记录')
           .fontSize(TypeSize.meta)
-          .fontWeight(TypeWeight.regular)
-          .fontColor(Colors.inkMuted);
-        Text(`${this.store.counterTotal(this.matterId)}`)
-          .fontSize(TypeSize.figure)
-          .fontWeight(TypeWeight.semibold)
-          .fontColor(Colors.inkSoft)
-          .fontFeature(TABULAR_NUMS);
+          .fontColor(Colors.inkMuted)
+          .padding({ top: Space.xs, bottom: 2 });
+
+        ForEach(this.store.counterEntriesFor(this.matterId, 10), (entry: CounterEntry) => {
+          Row({ space: Space.xs }) {
+            Column({ space: 2 }) {
+              Text(
+                `${entry.value > 0 ? '+' : ''}${entry.value}${unit ? ' ' + unit : ''}` +
+                (entry.note ? ` · ${entry.note}` : '')
+              )
+                .fontSize(TypeSize.bodySmall)
+                .fontColor(Colors.ink)
+                .fontFeature(TABULAR_NUMS);
+              Text(formatDateTime(entry.timestamp))
+                .fontSize(TypeSize.meta)
+                .fontColor(Colors.inkMuted)
+                .fontFeature(TABULAR_NUMS);
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1);
+
+            Button('撤回')
+              .type(ButtonType.Normal)
+              .constraintSize({ minHeight: 34 })
+              .fontSize(TypeSize.meta)
+              .fontWeight(TypeWeight.semibold)
+              .fontColor(Colors.inkSoft)
+              .backgroundColor(Color.Transparent)
+              .borderRadius(Radius.card)
+              .padding({ left: Space.xs, right: Space.xs })
+              .onClick(() => {
+                this.perform(async (): Promise<void> => {
+                  await this.store.removeCounterEntry(entry.id);
+                  this.refreshOnly();
+                  this.refreshCards('已撤回该条记录');
+                });
+              });
+          }
+          .width('100%')
+          .padding({ top: 6, bottom: 6 })
+          .border({ width: { top: 1 }, color: Colors.hairline });
+        }, (entry: CounterEntry) => entry.id);
       }
+      .width('100%')
       .alignItems(HorizontalAlign.Start);
     }
-    .width('100%');
-
-    Flex({ wrap: FlexWrap.Wrap }) {
-      Button(`+${this.store.counterStep(this.matterId)}`)
-        .type(ButtonType.Normal)
-        .constraintSize({ minHeight: 40 })
-        .fontSize(TypeSize.body)
-        .fontWeight(TypeWeight.semibold)
-        .fontColor(Colors.ink)
-        .backgroundColor(Colors.wash)
-        .borderRadius(Radius.card)
-        .padding({ left: Space.lg, right: Space.lg })
-        .margin({ right: Space.sm, bottom: Space.sm })
-        .onClick(() => {
-          this.perform(async (): Promise<void> => {
-            await this.store.addCounterEntry(this.matterId, this.store.counterStep(this.matterId));
-            this.refreshOnly();
-            this.refreshCards('已增加计数');
-          });
-        });
-      Button('+10')
-        .type(ButtonType.Normal)
-        .constraintSize({ minHeight: 40 })
-        .fontSize(TypeSize.body)
-        .fontWeight(TypeWeight.semibold)
-        .fontColor(Colors.ink)
-        .backgroundColor(Colors.wash)
-        .borderRadius(Radius.card)
-        .padding({ left: Space.lg, right: Space.lg })
-        .margin({ right: Space.sm, bottom: Space.sm })
-        .onClick(() => {
-          this.perform(async (): Promise<void> => {
-            await this.store.addCounterEntry(this.matterId, 10);
-            this.refreshOnly();
-            this.refreshCards('已增加计数');
-          });
-        });
-      Button('今日一次')
-        .type(ButtonType.Normal)
-        .constraintSize({ minHeight: 40 })
-        .fontSize(TypeSize.body)
-        .fontWeight(TypeWeight.semibold)
-        .fontColor(Colors.ink)
-        .backgroundColor(Colors.wash)
-        .borderRadius(Radius.card)
-        .padding({ left: Space.lg, right: Space.lg })
-        .margin({ right: Space.sm, bottom: Space.sm })
-        .onClick(() => {
-          this.perform(async (): Promise<void> => {
-            await this.store.markDailyOnce(this.matterId);
-            this.refreshOnly();
-            this.refreshCards('已记录今日一次');
-          });
-        });
-    }
-    .width('100%');
-
-    Row({ space: Space.sm }) {
-      TextInput({ placeholder: '自定义数值', text: this.customCounterInput })
-        .constraintSize({ minHeight: 40 })
-        .fontSize(TypeSize.body)
-        .fontColor(Colors.ink)
-        .placeholderColor(Colors.inkMuted)
-        .caretColor(Colors.red)
-        .backgroundColor(Colors.wash)
-        .borderRadius(Radius.card)
-        .padding({ left: Space.md, right: Space.md })
-        .layoutWeight(1)
-        .onChange((value: string) => {
-          this.customCounterInput = value;
-        });
-      Button('增加')
-        .type(ButtonType.Normal)
-        .constraintSize({ minHeight: 40 })
-        .fontSize(TypeSize.body)
-        .fontWeight(TypeWeight.semibold)
-        .fontColor(Colors.ink)
-        .backgroundColor(Colors.wash)
-        .borderRadius(Radius.card)
-        .padding({ left: Space.lg, right: Space.lg })
-        .onClick(() => {
-          this.perform(async (): Promise<void> => {
-            const parsed = Number(this.customCounterInput);
-            if (!Number.isNaN(parsed)) {
-              await this.store.addCounterEntry(this.matterId, parsed);
-              this.customCounterInput = '';
-              this.refreshOnly();
-              this.refreshCards('已增加计数');
-            }
-          });
-        });
-    }
-    .width('100%');
   }
 
   @Builder
   private DeadlineModule() {
-    Text(this.deadlineDisplayText())
-      .fontSize(TypeSize.title)
-      .fontWeight(TypeWeight.semibold)
-      .fontColor(this.isDeadlineUrgent() ? Colors.red : Colors.ink)
-      .fontFeature(TABULAR_NUMS)
-      .width('100%');
+    Column({ space: Space.xs }) {
+      Text(this.deadlineDisplayText())
+        .fontSize(TypeSize.title)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(this.isDeadlineUrgent() ? Colors.red : Colors.ink)
+        .fontFeature(TABULAR_NUMS)
+        .width('100%');
+
+      if (this.deadlineConfig()?.repeat && this.deadlineConfig()?.repeat !== TimelineRepeat.None) {
+        Text(`重复 · ${timelineRepeatLabel(this.deadlineConfig()?.repeat ?? TimelineRepeat.None)}`)
+          .fontSize(TypeSize.bodySmall)
+          .fontColor(Colors.inkSoft)
+          .width('100%');
+      }
+      if (this.deadlineConfig()?.reminderMinutes !== undefined) {
+        Text(`提醒 · ${timelineReminderLabel(this.deadlineConfig()?.reminderMinutes)}`)
+          .fontSize(TypeSize.bodySmall)
+          .fontColor(Colors.inkSoft)
+          .fontFeature(TABULAR_NUMS)
+          .width('100%');
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start);
   }
 
   @Builder
   private NoteModule() {
-    Text(this.noteInput.length > 0 ? this.noteInput : '暂无备注')
-      .fontSize(TypeSize.body)
-      .fontWeight(TypeWeight.regular)
-      .fontColor(this.noteInput.length > 0 ? Colors.ink : Colors.inkMuted)
-      .width('100%');
+    Column({ space: Space.sm }) {
+      if (this.noteText.trim().length > 0) {
+        if (this.noteHasLinks(this.noteText)) {
+          TimelineLinkedNote({ value: this.noteText });
+        } else {
+          Text(this.noteText)
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.regular)
+            .fontColor(Colors.ink)
+            .width('100%');
+        }
+      }
+      if (this.noteAttachments.length > 0) {
+        TimelineAttachmentList({ items: this.noteAttachments });
+      }
+      if (this.noteText.trim().length === 0 && this.noteAttachments.length === 0) {
+        Text('暂无备注')
+          .fontSize(TypeSize.body)
+          .fontColor(Colors.inkMuted)
+          .width('100%');
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start);
   }
 
   @Builder

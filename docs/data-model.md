@@ -2,27 +2,30 @@
 
 实现结构以 [Types.ets](../app/entry/src/main/ets/model/Types.ets) 为准，存储行为见 [MatterStore.ets](../app/entry/src/main/ets/store/MatterStore.ets)。本文解释结构；需求中的建议字段不代表全部已实现。代码结构或存储机制改变时同步本文件。
 
-V1 只保留一个核心对象：事项。短期备忘、日期事项和长期记录都使用同一个模型。
+V1 只保留一个核心对象：事项（`Matter`）。短期备忘、关键日期、时间线排程和长期计数都使用同一个模型，并统一保存在原生 RDB 事务快照中。
 
 ## Matter / 事项
 
 ```ts
 interface Matter {
+  lastEditorToken?: string
   id: string
   title: string
-  description?: string
+  tagId?: string
   createdAt: number
   updatedAt: number
   archived: boolean
   orderIndex: number
   clusterId?: string
+  disabledModules?: ModuleInstance[]
   enabledModules: ModuleInstance[]
+  description?: string // 仅兼容读取旧存档；新创建与编辑统一收口至备注模块
 }
 ```
 
 ## ModuleInstance / 模块实例
 
-模块是事项启用的能力，不是事项类型。
+模块是事项启用的能力，不是事项类型。同一事项每种模块最多启用一份：
 
 ```ts
 interface ModuleInstance {
@@ -35,15 +38,15 @@ interface ModuleInstance {
 }
 ```
 
-V1 用户可选信息：
+用户可选的五大信息选项卡：
 
-- 记录
-- 计数
-- 截止日期
-- 备注
-- 列表
+- **时间**（`Deadline`）：`span: 'all_day' | 'range' | 'point'`，`timestamp`（开始/目标时刻），`endAt?`（时间段结束），`dayCountMode?: 'none' | 'countdown' | 'elapsed'`，`reminderMinutes?`，以及重复系列规则 `repeat?`、`repeatFromDay?`、`repeatUntilDay?`、`excludedDays?`、`overrides?`。不再提供独立地点字段，也不再写入冗余的 `Countdown` 模块实例。
+- **标签**（`Tag`）：绑定 `AppState.tags` 中的纯文字颜色标签（`{ id, name, color }`，自动剥离 emoji）。关闭模块时清除生效 `tagId` 并在 `disabledModules` 保留原选择。
+- **计数**（`Counter`）：合并原事件记录与计数，`mode: 'tally' | 'amount' | 'daily_once'`，支持 `unit?`、`initialValue?`、`fixedSteps?`。流水 `CounterEntry` 支持可选单次短备注 `note?` 及单条撤回删除。
+- **备注**（`Note`）：`text`（支持网址识别）与 `attachments?: TimelineAttachment[]`（图片、文档、音频沙箱文件名）。
+- **列表**（`Checklist`）：文字项与一层独立事项引用。
 
-`Countdown` 可以继续存在于旧数据和内部派生结构中，但不出现在创建选择器或详情页的信息选择器中；它始终由 `Deadline` 计算。
+旧数据中的 `Countdown`、`Progress` 和 `EventRecord` 仅作兼容读取；编辑保存时自动收敛为上述标准结构。
 
 ## ChecklistItem / 列表项
 
@@ -96,15 +99,14 @@ interface AppState {
 
 「补充示例」按四张示例事项的固定 ID 查找缺项，把新增事项和所属列表项一起写入当前快照。已有事项的排序、模块、归档状态和桌面卡片选择均沿用原值。[示例定义](../app/entry/src/main/ets/model/Defaults.ets)
 
-## 独立时间块
+## 时间线投影与旧独立时间块迁移
 
-[TimelineBlock](../app/entry/src/main/ets/contracts/TimelineService.ets) 保存稳定 ID、标题、开始与结束时间戳（毫秒）、备注及可选的 tagId 和 repeat。每段重复规则存一条系列记录，startAt / endAt 保存用于计算重复的起始时段。标签含稳定 ID、名称（可含 emoji）和 #RRGGBB 颜色。从时间线创建的独立块单独读写，无须创建同名 Matter。事项快照的存储位置见本页的一致性实现；两者没有跨存储原子提交。
+时间线视图不再维护独立的写入存储，而是由 [MatterSchedule](../app/entry/src/main/ets/domain/MatterSchedule.ets) 从当前未归档且启用了「时间（`span: 'range'`）」的 `Matter` 实时投影出 [TimelineBlock](../app/entry/src/main/ets/contracts/TimelineService.ets) 列表，供[重复日期计算](../app/entry/src/main/ets/domain/TimelineRecurrence.ets)、[布局计算](../app/entry/src/main/ets/domain/TimelineLayout.ets)、日期圆环及[系统提醒规划](../app/entry/src/main/ets/domain/TimelineReminderPlan.ets)共用。
 
-[TimelineServices](../app/entry/src/main/ets/application/TimelineServices.ets) 复用 preferences 适配器，在 `todone_timeline` 文件的 `timeline_blocks_v1` 键保存时间块和标签。旧版数组及 v2 至 v5 快照均可读取。无重复字段的日程按单次显示，旧重复系列保留原来已经排出的历史。下次成功写入时升为 v6，系列可存生效日、截止日（不含当天）和排除日期集合。上述值均按当地年月日编号，改钟点仍保留删除范围。单次编辑保存在系列内，以修改前那次的开始时间识别。修改这次及以后的规则时，旧段截至选中日，新段与旧段在同一次写入中提交，之后按各段编辑和删除。若新频率无法容纳原本单独编辑过的一次，保留它的实际时段与内容，转为可独立编辑的日程。时间块和标签共用写入队列；频率由当前已保存日程计算。日期圈、小窗和网格共用[重复日期计算](../app/entry/src/main/ets/domain/TimelineRecurrence.ets)，只展开与查询窗口相交的时段。同一系列的各次以系列 ID 和当次开始时间区分，整组编辑或删除按持久化 ID 执行，删除单次和截断还会核对实例开始时间。把过去的单次转为重复时，原来那次独立留存；新系列复用原 ID，从设置日起按规则排期。[业务服务](../app/entry/src/main/ets/domain/DefaultTimelineService.ets) 按同一 ID 新增或更新，串行执行写入，等待 flush 完成后发布新的列表。读取损坏快照时向页面返回读取失败。开始与结束构成左闭右开区间，切分到日期列和重叠排布在[布局计算](../app/entry/src/main/ets/domain/TimelineLayout.ets)中完成。
-
-旧版存档未记录创建时区。遇到跨夏令时的单次修改，读入时可按系列日期和匹配的钟点偏移重新关联原来的那次日程，实际修改的起止时刻和资料照原样保留。单纯打开日程不会写入存档。
-
-时间块和单次例外可保存相对开始时间的提前分钟数（0 表示开始时）及附件列表。老日程默认关闭提醒，附件为空。每个附件记录 ID、名称、类型和来源。文件、图片与音频由系统选择器导入到应用私有目录，快照仅保存文件名。新输入的网址作为备注原文保存，显示时识别链接。旧版已保存的网址附件沿用原地址，仍可打开和移除。清理文件前核对系列、单次例外、草稿和正在导入的引用。系统提醒按实际实例及其提前量排序，改期、删除或再次进入应用时与系统已登记的提醒核对。
+- **主页常驻与按日筛选**：仅开启了 `range` 时间段且未开启天数计算（倒数/正数）、计数或列表的纯轻日程，默认不混入主页「全部常驻」卡堆，避免日常琐碎安排塞满首页；用户在主页周日期条点选某日（或开启关键词搜索）时，该日的所有时间段事项（含重复实例与单次改期）与当日关键日事项一并在主页浮现并支持直接编辑。
+- **重复范围编辑与删除**：在统一创建页或时间线抽屉修改、删除重复事项时，继续支持「仅这一次（写入 `overrides` 或 `excludedDays`）」、「这次及以后（截断 `repeatUntilDay` 并在同一 RDB 事务内生成后段事项）」与「整个系列」。
+- **附件管理**：备注中的图片、文件与音频由 [TimelineAttachmentFiles](../app/entry/src/main/ets/application/TimelineAttachmentFiles.ets) 导入应用私有沙箱，清理前扫描全部 `Matter`（含禁用模块与单次改期例外）及活动编辑会话，防止误删。
+- **旧时间线只读导入与恢复**：首次检测到 `AppState.timelineImported !== true` 时，`MatterStore.init` 使用 [DefaultTimelineService](../app/entry/src/main/ets/domain/DefaultTimelineService.ets) 只读解析旧 `todone_timeline`（`timeline_blocks_v1`），剥离旧标签中的 emoji 并去重映射 ID，将历史独立时间块及单次例外原子导入 RDB 快照。原 `todone_timeline` 与 `todone_store` 文件全程只读保留、不删除；若旧文件损坏则跳过置位并保留原始字节供排查恢复。
 
 ## 协作开发边界
 

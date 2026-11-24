@@ -1,6 +1,12 @@
-import { DateMode } from '../model/Types';
-import { daysUntil, formatDate, pad2 } from '../common/DateFormat';
+import {
+  TIMELINE_REMINDER_MINUTES,
+  timelineReminderLabel,
+  TimelineRepeat,
+  timelineRepeatLabel
+} from '../contracts/TimelineService';
+import { daysUntil, formatClock, formatDate, isSameLocalDay } from '../common/DateFormat';
 import { Colors, Radius, Space, TABULAR_NUMS, TypeSize, TypeWeight } from '../common/Theme';
+import { DayCountMode, TimeSpanMode } from '../model/Types';
 
 interface CalendarDayCell {
   key: string;
@@ -25,6 +31,21 @@ interface QuickTimePreset {
   minute: number;
 }
 
+enum ActiveDrawer {
+  None = 'none',
+  StartDay = 'start_day',
+  EndDay = 'end_day',
+  StartClock = 'start_clock',
+  EndClock = 'end_clock'
+}
+
+enum ActivePopup {
+  None = 'none',
+  DayCount = 'day_count',
+  Reminder = 'reminder',
+  Repeat = 'repeat'
+}
+
 const WEEKDAY_HEADERS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
 const WEEKDAY_CN: string[] = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const FUTURE_PRESETS: QuickDatePreset[] = [
@@ -44,17 +65,25 @@ const PAST_PRESETS: QuickDatePreset[] = [
 const TIME_PRESETS: QuickTimePreset[] = [
   { label: '09:00', hour: 9, minute: 0 },
   { label: '12:00', hour: 12, minute: 0 },
+  { label: '14:00', hour: 14, minute: 0 },
   { label: '18:00', hour: 18, minute: 0 },
-  { label: '21:00', hour: 21, minute: 0 },
-  { label: '23:59', hour: 23, minute: 59 }
+  { label: '21:00', hour: 21, minute: 0 }
+];
+const REMINDER_ITEMS: number[] = [-1].concat(TIMELINE_REMINDER_MINUTES);
+const REPEAT_ITEMS: TimelineRepeat[] = [
+  TimelineRepeat.None,
+  TimelineRepeat.Daily,
+  TimelineRepeat.Weekdays,
+  TimelineRepeat.Weekly,
+  TimelineRepeat.Monthly
 ];
 const MONTH_ROWS: number[][] = [
   [0, 1, 2, 3],
   [4, 5, 6, 7],
   [8, 9, 10, 11]
 ];
-const TIME_WHEEL_HEIGHT: number = 156;
-const TIME_SELECTION_HEIGHT: number = 38;
+const TIME_WHEEL_HEIGHT: number = 152;
+const TIME_SELECTION_HEIGHT: number = 36;
 
 function addMonthsClamped(base: Date, deltaMonths: number): Date {
   const targetYear = base.getFullYear();
@@ -62,72 +91,145 @@ function addMonthsClamped(base: Date, deltaMonths: number): Date {
   const firstOfTarget = new Date(targetYear, targetMonth, 1);
   const lastDay = new Date(firstOfTarget.getFullYear(), firstOfTarget.getMonth() + 1, 0).getDate();
   const clampedDay = Math.min(base.getDate(), lastDay);
-  return new Date(firstOfTarget.getFullYear(), firstOfTarget.getMonth(), clampedDay,
-    base.getHours(), base.getMinutes(), 0, 0);
-}
-
-function sameCalendarDate(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
+  return new Date(
+    firstOfTarget.getFullYear(),
+    firstOfTarget.getMonth(),
+    clampedDay,
+    base.getHours(),
+    base.getMinutes(),
+    0,
+    0
+  );
 }
 
 @Component
 export struct MatterDateEditor {
-  @Link @Watch('onDatePropChanged') date: Date;
-  @Link mode: DateMode;
-  @Link hasTime: boolean;
+  @Link @Watch('onTimestampPropChanged') startAt: number;
+  @Link endAt: number;
+  @Link span: TimeSpanMode;
+  @Link dayCountMode: DayCountMode;
+  @Link reminderMinutes: number;
+  @Link repeat: TimelineRepeat;
+  initialFocusClock: string = '';
+  onChanged: () => void = () => {};
 
-  @State private calendarOpen: boolean = false;
+  @State private drawer: ActiveDrawer = ActiveDrawer.None;
+  @State private popup: ActivePopup = ActivePopup.None;
   @State private pickingYearMonth: boolean = false;
-  @State private timeOpen: boolean = false;
   @State private viewYear: number = new Date().getFullYear();
   @State private viewMonth: number = new Date().getMonth();
   @State private yearPageStart: number = new Date().getFullYear() - 4;
 
   aboutToAppear(): void {
-    this.syncCalendarView(this.date);
+    this.syncCalendarView(this.startAt);
+    if (this.initialFocusClock === 'start') {
+      this.drawer = ActiveDrawer.StartClock;
+    } else if (this.initialFocusClock === 'end') {
+      this.drawer = ActiveDrawer.EndClock;
+    }
   }
 
-  private onDatePropChanged(): void {
-    this.syncCalendarView(this.date);
+  private onTimestampPropChanged(): void {
+    if (this.drawer !== ActiveDrawer.EndDay) {
+      this.syncCalendarView(this.startAt);
+    }
   }
 
-  private syncCalendarView(target: Date): void {
+  private activeCalendarStamp(): number {
+    return this.drawer === ActiveDrawer.EndDay ? this.endAt : this.startAt;
+  }
+
+  private syncCalendarView(stamp: number): void {
+    const target = new Date(stamp);
     this.viewYear = target.getFullYear();
     this.viewMonth = target.getMonth();
     this.yearPageStart = Math.max(1900, Math.min(2089, target.getFullYear() - 4));
   }
 
-  private dateLabel(): string {
-    if (this.mode === 'elapsed') return '起始日期';
-    if (this.mode === 'deadline') return '截止日期';
-    return '目标日期';
+  private toggleDrawer(target: ActiveDrawer): void {
+    this.popup = ActivePopup.None;
+    if (this.drawer === target) {
+      this.drawer = ActiveDrawer.None;
+      return;
+    }
+    this.drawer = target;
+    this.pickingYearMonth = false;
+    if (target === ActiveDrawer.StartDay) {
+      this.syncCalendarView(this.startAt);
+    } else if (target === ActiveDrawer.EndDay) {
+      this.syncCalendarView(this.endAt);
+    }
+  }
+
+  private selectSpan(next: TimeSpanMode): void {
+    if (this.span === next) return;
+    this.span = next;
+    this.drawer = ActiveDrawer.None;
+    this.popup = ActivePopup.None;
+    if (next === 'range') {
+      const s = new Date(this.startAt);
+      if (s.getHours() === 0 && s.getMinutes() === 0) {
+        s.setHours(9, 0, 0, 0);
+        this.startAt = s.getTime();
+      }
+      if (!(this.endAt > this.startAt)) {
+        this.endAt = this.startAt + 3600000;
+      }
+    } else if (next === 'point') {
+      const s = new Date(this.startAt);
+      if (s.getHours() === 0 && s.getMinutes() === 0) {
+        s.setHours(18, 0, 0, 0);
+        this.startAt = s.getTime();
+      }
+    }
+    this.onChanged();
+  }
+
+  private selectDayCount(next: DayCountMode): void {
+    this.dayCountMode = next;
+    this.popup = ActivePopup.None;
+    if (next === 'elapsed') {
+      this.repeat = TimelineRepeat.None;
+      if (daysUntil(this.startAt) > 0) {
+        const now = new Date();
+        const cur = new Date(this.startAt);
+        now.setHours(cur.getHours(), cur.getMinutes(), 0, 0);
+        const length = Math.max(3600000, this.endAt - this.startAt);
+        this.startAt = now.getTime();
+        this.endAt = this.startAt + length;
+        this.syncCalendarView(this.startAt);
+      }
+    }
+    this.onChanged();
   }
 
   private presets(): QuickDatePreset[] {
-    return this.mode === 'elapsed' ? PAST_PRESETS : FUTURE_PRESETS;
+    return this.dayCountMode === 'elapsed' ? PAST_PRESETS : FUTURE_PRESETS;
   }
 
-  private presetDate(preset: QuickDatePreset): Date {
+  private presetTimestamp(preset: QuickDatePreset): number {
+    const cur = new Date(this.startAt);
     const now = new Date();
-    now.setHours(this.date.getHours(), this.date.getMinutes(), 0, 0);
+    now.setHours(cur.getHours(), cur.getMinutes(), 0, 0);
     if (preset.monthsOffset !== undefined) {
-      return addMonthsClamped(now, preset.monthsOffset);
+      return addMonthsClamped(now, preset.monthsOffset).getTime();
     }
     const next = new Date(now.getTime());
     next.setDate(next.getDate() + (preset.daysOffset ?? 0));
-    return next;
+    return next.getTime();
   }
 
   private isPresetSelected(preset: QuickDatePreset): boolean {
-    return sameCalendarDate(this.date, this.presetDate(preset));
+    return isSameLocalDay(this.startAt, this.presetTimestamp(preset));
   }
 
   private applyPreset(preset: QuickDatePreset): void {
-    const next = this.presetDate(preset);
-    this.date = next;
-    this.syncCalendarView(next);
+    const nextStamp = this.presetTimestamp(preset);
+    const duration = Math.max(3600000, this.endAt - this.startAt);
+    this.startAt = nextStamp;
+    this.endAt = nextStamp + duration;
+    this.syncCalendarView(nextStamp);
+    this.onChanged();
   }
 
   private isFutureDate(year: number, month: number, day: number): boolean {
@@ -138,21 +240,22 @@ export struct MatterDateEditor {
   }
 
   private isMonthDisabled(year: number, month: number): boolean {
-    if (this.mode !== 'elapsed') return false;
+    if (this.dayCountMode !== 'elapsed' || this.drawer === ActiveDrawer.EndDay) return false;
     const now = new Date();
     return year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth());
   }
 
   private isYearDisabled(year: number): boolean {
-    if (this.mode !== 'elapsed') return false;
+    if (this.dayCountMode !== 'elapsed' || this.drawer === ActiveDrawer.EndDay) return false;
     return year > new Date().getFullYear();
   }
 
   private canGoNextMonth(): boolean {
     if (this.viewYear > 2100 || (this.viewYear === 2100 && this.viewMonth >= 11)) return false;
-    if (this.mode === 'elapsed') {
+    if (this.dayCountMode === 'elapsed' && this.drawer !== ActiveDrawer.EndDay) {
       const now = new Date();
-      if (this.viewYear > now.getFullYear() || (this.viewYear === now.getFullYear() && this.viewMonth >= now.getMonth())) {
+      if (this.viewYear > now.getFullYear() ||
+        (this.viewYear === now.getFullYear() && this.viewMonth >= now.getMonth())) {
         return false;
       }
     }
@@ -173,18 +276,35 @@ export struct MatterDateEditor {
 
   private selectCalendarCell(cell: CalendarDayCell): void {
     if (cell.disabled) return;
-    const next = new Date(cell.year, cell.month, cell.day, this.date.getHours(), this.date.getMinutes(), 0, 0);
-    this.date = next;
+    if (this.drawer === ActiveDrawer.EndDay) {
+      const base = new Date(this.endAt);
+      const next = new Date(cell.year, cell.month, cell.day, base.getHours(), base.getMinutes(), 0, 0);
+      this.endAt = next.getTime();
+    } else {
+      const base = new Date(this.startAt);
+      const duration = this.endAt - this.startAt;
+      const next = new Date(cell.year, cell.month, cell.day, base.getHours(), base.getMinutes(), 0, 0);
+      this.startAt = next.getTime();
+      if (duration > 0) this.endAt = this.startAt + duration;
+    }
     this.viewYear = cell.year;
     this.viewMonth = cell.month;
+    this.drawer = ActiveDrawer.None;
+    this.onChanged();
   }
 
   private jumpToToday(): void {
     const now = new Date();
-    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate(),
-      this.date.getHours(), this.date.getMinutes(), 0, 0);
-    this.date = next;
-    this.syncCalendarView(next);
+    this.selectCalendarCell({
+      key: 'today',
+      year: now.getFullYear(),
+      month: now.getMonth(),
+      day: now.getDate(),
+      inMonth: true,
+      isToday: true,
+      isSelected: true,
+      disabled: false
+    });
     this.pickingYearMonth = false;
   }
 
@@ -193,7 +313,8 @@ export struct MatterDateEditor {
     const leading = (first.getDay() + 6) % 7;
     const daysInMonth = new Date(this.viewYear, this.viewMonth + 1, 0).getDate();
     const totalCells = Math.ceil((leading + daysInMonth) / 7) * 7;
-    const today = new Date();
+    const todayStamp = Date.now();
+    const selectedStamp = this.activeCalendarStamp();
     const weeks: CalendarDayCell[][] = [];
     let currentWeek: CalendarDayCell[] = [];
 
@@ -202,15 +323,16 @@ export struct MatterDateEditor {
       const y = cellDate.getFullYear();
       const m = cellDate.getMonth();
       const d = cellDate.getDate();
-      const disabled = y < 1900 || y > 2100 || (this.mode === 'elapsed' && this.isFutureDate(y, m, d));
+      const disabled = y < 1900 || y > 2100 ||
+        (this.dayCountMode === 'elapsed' && this.drawer !== ActiveDrawer.EndDay && this.isFutureDate(y, m, d));
       currentWeek.push({
         key: `${y}-${m}-${d}`,
         year: y,
         month: m,
         day: d,
         inMonth: y === this.viewYear && m === this.viewMonth,
-        isToday: sameCalendarDate(cellDate, today),
-        isSelected: sameCalendarDate(cellDate, this.date),
+        isToday: isSameLocalDay(cellDate.getTime(), todayStamp),
+        isSelected: isSameLocalDay(cellDate.getTime(), selectedStamp),
         disabled
       });
       if (currentWeek.length === 7) {
@@ -233,95 +355,195 @@ export struct MatterDateEditor {
     return rows;
   }
 
-  private selectMode(mode: DateMode): void {
-    this.mode = mode;
-    if (mode !== 'deadline') {
-      this.timeOpen = false;
+  private setClockFor(isEnd: boolean, hour: number, minute: number): void {
+    if (isEnd) {
+      const next = new Date(this.endAt);
+      next.setHours(hour, minute, 0, 0);
+      this.endAt = next.getTime();
+    } else {
+      const length = this.endAt - this.startAt;
+      const next = new Date(this.startAt);
+      next.setHours(hour, minute, 0, 0);
+      this.startAt = next.getTime();
+      if (this.span === 'range' && length > 0) {
+        this.endAt = this.startAt + length;
+      }
     }
-    if (mode === 'elapsed' && daysUntil(this.date.getTime()) > 0) {
-      const today = new Date();
-      today.setHours(this.date.getHours(), this.date.getMinutes(), 0, 0);
-      this.date = today;
-      this.syncCalendarView(today);
-    }
+    this.onChanged();
   }
 
-  private setClock(hour: number, minute: number): void {
-    const next = new Date(this.date.getTime());
-    next.setHours(hour, minute, 0, 0);
-    this.date = next;
+  private shortDayLabel(stamp: number): string {
+    const d = new Date(stamp);
+    const sameYear = d.getFullYear() === new Date().getFullYear();
+    const prefix = sameYear ? '' : `${d.getFullYear()}年`;
+    return `${prefix}${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAY_CN[d.getDay()]}`;
   }
 
-  private formattedDateWithWeekday(): string {
-    return `${formatDate(this.date.getTime())} · ${WEEKDAY_CN[this.date.getDay()]}`;
+  private fullDayLabel(stamp: number): string {
+    const d = new Date(stamp);
+    return `${formatDate(stamp)} · ${WEEKDAY_CN[d.getDay()]}`;
+  }
+
+  private durationHint(): string {
+    const mins = Math.round((this.endAt - this.startAt) / 60000);
+    if (mins <= 0) return '结束时间须晚于开始时间，跨日可点选结束日期';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `共 ${h > 0 ? `${h} 小时` : ''}${h > 0 && m > 0 ? ' ' : ''}${m > 0 ? `${m} 分钟` : ''}`;
+  }
+
+  private repeatHint(): string {
+    if (this.repeat === TimelineRepeat.Weekdays) return '按每周一至周五重复';
+    const dom = new Date(this.startAt).getDate();
+    if (this.repeat === TimelineRepeat.Monthly && dom >= 29) {
+      return `每月 ${dom} 日，自动跳过没有该日期的月份`;
+    }
+    return '';
+  }
+
+  private dayCountChipLabel(): string {
+    if (this.dayCountMode === 'countdown') return '倒数日';
+    if (this.dayCountMode === 'elapsed') return '正数日';
+    return '天数计算';
   }
 
   @Builder
-  private modeOption(value: DateMode, title: string, help: string) {
-    Row({ space: Space.md }) {
-      Stack({ alignContent: Alignment.Center }) {
-        Column()
-          .width(20)
-          .height(20)
-          .borderRadius(10)
-          .backgroundColor(Color.Transparent)
-          .border({ width: 1, color: this.mode === value ? Colors.ink : Colors.line });
-        if (this.mode === value) {
-          Column()
-            .width(10)
-            .height(10)
-            .borderRadius(5)
-            .backgroundColor(Colors.ink);
-        }
-      }
-      .width(20)
-      .height(20);
-
-      Column({ space: Space.xs }) {
-        Text(title)
-          .fontSize(TypeSize.body)
-          .fontWeight(this.mode === value ? TypeWeight.semibold : TypeWeight.regular)
-          .fontColor(this.mode === value ? Colors.ink : Colors.inkSoft);
-        Text(help)
-          .fontSize(TypeSize.meta)
-          .fontWeight(TypeWeight.regular)
-          .fontColor(Colors.inkMuted);
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1);
+  private SpanSegment() {
+    Row({ space: 4 }) {
+      this.SpanTab('all_day', '全天');
+      this.SpanTab('range', '时间段');
+      this.SpanTab('point', '截止时刻');
     }
     .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .padding(Space.md)
-    .margin({ bottom: Space.xs })
-    .backgroundColor(this.mode === value ? Colors.wash : Color.Transparent)
-    .borderRadius(Radius.card)
-    .onClick(() => this.selectMode(value));
+    .padding(3)
+    .backgroundColor(Colors.wash)
+    .borderRadius(Radius.card);
   }
 
   @Builder
-  private QuickDateBar() {
+  private SpanTab(value: TimeSpanMode, label: string) {
+    Button(label, { type: ButtonType.Normal })
+      .layoutWeight(1)
+      .height(34)
+      .padding(0)
+      .fontSize(TypeSize.bodySmall)
+      .fontWeight(this.span === value ? TypeWeight.semibold : TypeWeight.regular)
+      .fontColor(this.span === value ? Colors.ink : Colors.inkSoft)
+      .backgroundColor(this.span === value ? Colors.card : Color.Transparent)
+      .borderRadius(Radius.chip)
+      .border({ width: this.span === value ? 1 : 0, color: Colors.hairline })
+      .onClick(() => this.selectSpan(value));
+  }
+
+  @Builder
+  private SingleDateRow() {
+    Row({ space: Space.xs }) {
+      Button({ type: ButtonType.Normal }) {
+        Row() {
+          Text(this.fullDayLabel(this.startAt))
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink)
+            .fontFeature(TABULAR_NUMS);
+          Blank();
+          Text(this.drawer === ActiveDrawer.StartDay ? '▴' : '▾')
+            .fontSize(TypeSize.meta)
+            .fontColor(Colors.inkMuted);
+        }
+        .width('100%')
+        .padding({ left: Space.md, right: Space.md });
+      }
+      .layoutWeight(1)
+      .constraintSize({ minHeight: 42 })
+      .backgroundColor(this.drawer === ActiveDrawer.StartDay ? Colors.card : Colors.wash)
+      .borderRadius(Radius.card)
+      .border({ width: this.drawer === ActiveDrawer.StartDay ? 1 : 0, color: Colors.line })
+      .onClick(() => this.toggleDrawer(ActiveDrawer.StartDay));
+
+      if (this.span === 'point') {
+        Button(formatClock(this.startAt), { type: ButtonType.Normal })
+          .constraintSize({ minHeight: 42 })
+          .padding({ left: Space.md, right: Space.md })
+          .fontSize(TypeSize.title)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink)
+          .fontFeature(TABULAR_NUMS)
+          .backgroundColor(this.drawer === ActiveDrawer.StartClock ? Colors.card : Colors.wash)
+          .borderRadius(Radius.card)
+          .border({ width: this.drawer === ActiveDrawer.StartClock ? 1 : 0, color: Colors.line })
+          .onClick(() => this.toggleDrawer(ActiveDrawer.StartClock));
+      }
+    }
+    .width('100%');
+
     Flex({ wrap: FlexWrap.Wrap }) {
       ForEach(this.presets(), (preset: QuickDatePreset) => {
         Button(preset.label)
           .type(ButtonType.Normal)
-          .constraintSize({ minHeight: 36 })
-          .fontSize(TypeSize.bodySmall)
+          .constraintSize({ minHeight: 32 })
+          .fontSize(TypeSize.meta)
           .fontWeight(this.isPresetSelected(preset) ? TypeWeight.semibold : TypeWeight.regular)
           .fontColor(this.isPresetSelected(preset) ? Colors.bg : Colors.inkSoft)
           .backgroundColor(this.isPresetSelected(preset) ? Colors.ink : Colors.wash)
           .borderRadius(Radius.chip)
-          .padding({ left: Space.md, right: Space.md })
-          .margin({ right: Space.sm, bottom: Space.xs })
+          .padding({ left: Space.sm, right: Space.sm })
+          .margin({ right: Space.xs, bottom: Space.xs })
           .onClick(() => this.applyPreset(preset));
-      }, (preset: QuickDatePreset) => this.mode + '_' + preset.label);
+      }, (preset: QuickDatePreset) => `${this.dayCountMode}_${preset.label}`);
+    }
+    .width('100%');
+  }
+
+  @Builder
+  private RangeRows() {
+    Column({ space: 2 }) {
+      this.RangeEndpointRow('开始', this.startAt, ActiveDrawer.StartDay, ActiveDrawer.StartClock);
+      this.RangeEndpointRow('结束', this.endAt, ActiveDrawer.EndDay, ActiveDrawer.EndClock);
+      Text(this.durationHint())
+        .width('100%')
+        .textAlign(TextAlign.End)
+        .fontSize(TypeSize.meta)
+        .fontWeight(this.endAt > this.startAt ? TypeWeight.regular : TypeWeight.semibold)
+        .fontColor(this.endAt > this.startAt ? Colors.inkMuted : Colors.red)
+        .fontFeature(TABULAR_NUMS);
+    }
+    .width('100%');
+  }
+
+  @Builder
+  private RangeEndpointRow(label: string, stamp: number, dayDrawer: ActiveDrawer, clockDrawer: ActiveDrawer) {
+    Row({ space: Space.xs }) {
+      Text(label)
+        .fontSize(TypeSize.bodySmall)
+        .fontColor(Colors.inkSoft);
+      Blank();
+      Button(this.shortDayLabel(stamp), { type: ButtonType.Normal })
+        .height(40)
+        .padding({ left: Space.sm, right: Space.sm })
+        .fontSize(TypeSize.bodySmall)
+        .fontColor(this.drawer === dayDrawer ? Colors.ink : Colors.inkSoft)
+        .fontWeight(this.drawer === dayDrawer ? TypeWeight.semibold : TypeWeight.regular)
+        .backgroundColor(this.drawer === dayDrawer ? Colors.wash : Color.Transparent)
+        .borderRadius(Radius.card)
+        .fontFeature(TABULAR_NUMS)
+        .onClick(() => this.toggleDrawer(dayDrawer));
+      Button(formatClock(stamp), { type: ButtonType.Normal })
+        .height(40)
+        .padding({ left: Space.sm, right: Space.sm })
+        .fontSize(19)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink)
+        .backgroundColor(this.drawer === clockDrawer ? Colors.wash : Color.Transparent)
+        .borderRadius(Radius.card)
+        .fontFeature(TABULAR_NUMS)
+        .onClick(() => this.toggleDrawer(clockDrawer));
     }
     .width('100%');
   }
 
   @Builder
   private CalendarPanel() {
-    Column({ space: Space.sm }) {
+    Column({ space: Space.xs }) {
       Row({ space: Space.xs }) {
         Button({ type: ButtonType.Normal }) {
           Row({ space: Space.xs }) {
@@ -336,11 +558,10 @@ export struct MatterDateEditor {
           }
           .alignItems(VerticalAlign.Center);
         }
-        .constraintSize({ minHeight: 40 })
+        .constraintSize({ minHeight: 36 })
         .padding({ left: Space.xs, right: Space.sm })
         .backgroundColor(this.pickingYearMonth ? Colors.wash : Color.Transparent)
         .borderRadius(Radius.card)
-        .accessibilityText(this.pickingYearMonth ? '返回日历' : '快速选择年份与月份')
         .onClick(() => {
           this.pickingYearMonth = !this.pickingYearMonth;
           if (this.pickingYearMonth) {
@@ -352,7 +573,7 @@ export struct MatterDateEditor {
 
         Button('今天')
           .type(ButtonType.Normal)
-          .constraintSize({ minHeight: 40 })
+          .constraintSize({ minHeight: 36 })
           .fontSize(TypeSize.bodySmall)
           .fontWeight(TypeWeight.semibold)
           .fontColor(Colors.inkSoft)
@@ -364,29 +585,27 @@ export struct MatterDateEditor {
         if (!this.pickingYearMonth) {
           Button('‹')
             .type(ButtonType.Normal)
-            .width(40)
-            .height(40)
+            .width(36)
+            .height(36)
             .padding(0)
-            .fontSize(20)
+            .fontSize(18)
             .fontColor(Colors.ink)
             .backgroundColor(Color.Transparent)
             .borderRadius(Radius.card)
             .enabled(this.canGoPrevMonth())
             .opacity(this.canGoPrevMonth() ? 1 : 0.35)
-            .accessibilityText('上个月')
             .onClick(() => this.shiftMonth(-1));
           Button('›')
             .type(ButtonType.Normal)
-            .width(40)
-            .height(40)
+            .width(36)
+            .height(36)
             .padding(0)
-            .fontSize(20)
+            .fontSize(18)
             .fontColor(Colors.ink)
             .backgroundColor(Color.Transparent)
             .borderRadius(Radius.card)
             .enabled(this.canGoNextMonth())
             .opacity(this.canGoNextMonth() ? 1 : 0.35)
-            .accessibilityText('下个月')
             .onClick(() => this.shiftMonth(1));
         }
       }
@@ -400,7 +619,7 @@ export struct MatterDateEditor {
       }
     }
     .width('100%')
-    .padding(Space.md)
+    .padding(Space.sm)
     .backgroundColor(Colors.bg)
     .borderRadius(Radius.card)
     .border({ width: 1, color: Colors.hairline });
@@ -414,12 +633,11 @@ export struct MatterDateEditor {
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
           .fontSize(TypeSize.meta)
-          .fontWeight(TypeWeight.regular)
           .fontColor(Colors.inkMuted);
       }, (name: string) => name);
     }
     .width('100%')
-    .padding({ top: Space.xs, bottom: Space.xs });
+    .padding({ top: 2, bottom: 2 });
 
     Column({ space: 2 }) {
       ForEach(this.calendarWeeks(), (week: CalendarDayCell[], rowIndex: number) => {
@@ -428,17 +646,15 @@ export struct MatterDateEditor {
             Button({ type: ButtonType.Normal }) {
               Column({ space: 2 }) {
                 Text(`${cell.day}`)
-                  .fontSize(TypeSize.body)
+                  .fontSize(TypeSize.bodySmall)
                   .fontWeight(cell.isSelected || cell.isToday ? TypeWeight.semibold : TypeWeight.regular)
                   .fontColor(cell.isSelected ? Colors.bg : cell.inMonth ? Colors.ink : Colors.inkMuted)
                   .fontFeature(TABULAR_NUMS);
                 Column()
-                  .width(12)
+                  .width(10)
                   .height(2)
                   .borderRadius(1)
-                  .backgroundColor(cell.isToday
-                    ? (cell.isSelected ? Colors.bg : Colors.red)
-                    : Color.Transparent);
+                  .backgroundColor(cell.isToday ? (cell.isSelected ? Colors.bg : Colors.red) : Color.Transparent);
               }
               .width('100%')
               .height('100%')
@@ -446,14 +662,12 @@ export struct MatterDateEditor {
               .alignItems(HorizontalAlign.Center);
             }
             .layoutWeight(1)
-            .height(40)
+            .height(36)
             .padding(0)
             .backgroundColor(cell.isSelected ? Colors.ink : cell.isToday ? Colors.wash : Color.Transparent)
             .borderRadius(Radius.card)
             .enabled(!cell.disabled)
             .opacity(cell.disabled ? 0.25 : cell.inMonth ? 1 : 0.45)
-            .accessibilityText(`${cell.year}年${cell.month + 1}月${cell.day}日` +
-              (cell.isToday ? ' 今天' : '') + (cell.isSelected ? ' 已选中' : ''))
             .onClick(() => this.selectCalendarCell(cell));
           }, (cell: CalendarDayCell) => `${cell.key}_${cell.isSelected}_${cell.disabled}`);
         }
@@ -465,135 +679,97 @@ export struct MatterDateEditor {
 
   @Builder
   private YearMonthGrid() {
-    Column({ space: Space.sm }) {
+    Column({ space: Space.xs }) {
       Row() {
-        Text('年份')
-          .fontSize(TypeSize.meta)
-          .fontColor(Colors.inkMuted);
+        Text('年份').fontSize(TypeSize.meta).fontColor(Colors.inkMuted);
         Blank();
         Button('‹')
           .type(ButtonType.Normal)
-          .width(36)
-          .height(36)
-          .padding(0)
-          .fontSize(18)
-          .fontColor(Colors.ink)
-          .backgroundColor(Color.Transparent)
-          .borderRadius(Radius.card)
+          .width(32).height(32).padding(0).fontSize(16).fontColor(Colors.ink)
+          .backgroundColor(Color.Transparent).borderRadius(Radius.card)
           .enabled(this.yearPageStart > 1900)
-          .opacity(this.yearPageStart > 1900 ? 1 : 0.35)
-          .accessibilityText('前十二年')
-          .onClick(() => {
-            this.yearPageStart = Math.max(1900, this.yearPageStart - 12);
-          });
+          .onClick(() => { this.yearPageStart = Math.max(1900, this.yearPageStart - 12); });
         Text(`${this.yearPageStart}–${this.yearPageStart + 11}`)
-          .fontSize(TypeSize.meta)
-          .fontColor(Colors.inkSoft)
-          .fontFeature(TABULAR_NUMS);
+          .fontSize(TypeSize.meta).fontColor(Colors.inkSoft).fontFeature(TABULAR_NUMS);
         Button('›')
           .type(ButtonType.Normal)
-          .width(36)
-          .height(36)
-          .padding(0)
-          .fontSize(18)
-          .fontColor(Colors.ink)
-          .backgroundColor(Color.Transparent)
-          .borderRadius(Radius.card)
+          .width(32).height(32).padding(0).fontSize(16).fontColor(Colors.ink)
+          .backgroundColor(Color.Transparent).borderRadius(Radius.card)
           .enabled(this.yearPageStart + 12 <= 2100 && (!this.isYearDisabled(this.yearPageStart + 12)))
-          .opacity(this.yearPageStart + 12 <= 2100 && (!this.isYearDisabled(this.yearPageStart + 12)) ? 1 : 0.35)
-          .accessibilityText('后十二年')
-          .onClick(() => {
-            this.yearPageStart = Math.min(2089, this.yearPageStart + 12);
-          });
+          .onClick(() => { this.yearPageStart = Math.min(2089, this.yearPageStart + 12); });
       }
       .width('100%')
       .alignItems(VerticalAlign.Center);
 
-      Column({ space: Space.xs }) {
-        ForEach(this.yearRows(), (row: number[], rIdx: number) => {
-          Row({ space: Space.xs }) {
-            ForEach(row, (year: number) => {
-              Button(`${year}`)
-                .type(ButtonType.Normal)
-                .layoutWeight(1)
-                .height(36)
-                .padding(0)
-                .fontSize(TypeSize.bodySmall)
-                .fontWeight(this.viewYear === year ? TypeWeight.semibold : TypeWeight.regular)
-                .fontColor(this.viewYear === year ? Colors.bg : Colors.ink)
-                .backgroundColor(this.viewYear === year ? Colors.ink : Colors.wash)
-                .borderRadius(Radius.chip)
-                .enabled(!this.isYearDisabled(year))
-                .opacity(this.isYearDisabled(year) ? 0.28 : 1)
-                .onClick(() => {
-                  this.viewYear = year;
-                  if (this.isMonthDisabled(this.viewYear, this.viewMonth)) {
-                    this.viewMonth = new Date().getMonth();
-                  }
-                });
-            }, (year: number) => `y_${year}_${this.viewYear === year}`);
-          }
-          .width('100%');
-        }, (_row: number[], rIdx: number) => `yr_${this.yearPageStart}_${rIdx}`);
-      }
-      .width('100%');
+      ForEach(this.yearRows(), (row: number[], rIdx: number) => {
+        Row({ space: Space.xs }) {
+          ForEach(row, (year: number) => {
+            Button(`${year}`)
+              .type(ButtonType.Normal).layoutWeight(1).height(32).padding(0)
+              .fontSize(TypeSize.meta)
+              .fontWeight(this.viewYear === year ? TypeWeight.semibold : TypeWeight.regular)
+              .fontColor(this.viewYear === year ? Colors.bg : Colors.ink)
+              .backgroundColor(this.viewYear === year ? Colors.ink : Colors.wash)
+              .borderRadius(Radius.chip)
+              .enabled(!this.isYearDisabled(year))
+              .opacity(this.isYearDisabled(year) ? 0.28 : 1)
+              .onClick(() => {
+                this.viewYear = year;
+                if (this.isMonthDisabled(this.viewYear, this.viewMonth)) {
+                  this.viewMonth = new Date().getMonth();
+                }
+              });
+          }, (year: number) => `y_${year}_${this.viewYear === year}`);
+        }.width('100%');
+      }, (_row: number[], rIdx: number) => `yr_${this.yearPageStart}_${rIdx}`);
 
       Divider().color(Colors.hairline);
 
-      Text('月份')
-        .fontSize(TypeSize.meta)
-        .fontColor(Colors.inkMuted)
-        .width('100%');
-
-      Column({ space: Space.xs }) {
-        ForEach(MONTH_ROWS, (row: number[], rIdx: number) => {
-          Row({ space: Space.xs }) {
-            ForEach(row, (monthIndex: number) => {
-              Button(`${monthIndex + 1}月`)
-                .type(ButtonType.Normal)
-                .layoutWeight(1)
-                .height(36)
-                .padding(0)
-                .fontSize(TypeSize.bodySmall)
-                .fontWeight(this.viewMonth === monthIndex ? TypeWeight.semibold : TypeWeight.regular)
-                .fontColor(this.viewMonth === monthIndex ? Colors.bg : Colors.ink)
-                .backgroundColor(this.viewMonth === monthIndex ? Colors.ink : Colors.wash)
-                .borderRadius(Radius.chip)
-                .enabled(!this.isMonthDisabled(this.viewYear, monthIndex))
-                .opacity(this.isMonthDisabled(this.viewYear, monthIndex) ? 0.28 : 1)
-                .onClick(() => {
-                  this.viewMonth = monthIndex;
-                  this.pickingYearMonth = false;
-                });
-            }, (monthIndex: number) => `m_${this.viewYear}_${monthIndex}_${this.viewMonth === monthIndex}`);
-          }
-          .width('100%');
-        }, (_row: number[], rIdx: number) => `mr_${this.viewYear}_${rIdx}`);
-      }
-      .width('100%');
+      ForEach(MONTH_ROWS, (row: number[], rIdx: number) => {
+        Row({ space: Space.xs }) {
+          ForEach(row, (monthIndex: number) => {
+            Button(`${monthIndex + 1}月`)
+              .type(ButtonType.Normal).layoutWeight(1).height(32).padding(0)
+              .fontSize(TypeSize.meta)
+              .fontWeight(this.viewMonth === monthIndex ? TypeWeight.semibold : TypeWeight.regular)
+              .fontColor(this.viewMonth === monthIndex ? Colors.bg : Colors.ink)
+              .backgroundColor(this.viewMonth === monthIndex ? Colors.ink : Colors.wash)
+              .borderRadius(Radius.chip)
+              .enabled(!this.isMonthDisabled(this.viewYear, monthIndex))
+              .opacity(this.isMonthDisabled(this.viewYear, monthIndex) ? 0.28 : 1)
+              .onClick(() => {
+                this.viewMonth = monthIndex;
+                this.pickingYearMonth = false;
+              });
+          }, (monthIndex: number) => `m_${this.viewYear}_${monthIndex}_${this.viewMonth === monthIndex}`);
+        }.width('100%');
+      }, (_row: number[], rIdx: number) => `mr_${this.viewYear}_${rIdx}`);
     }
     .width('100%');
   }
 
   @Builder
-  private TimePanel() {
-    Column({ space: Space.sm }) {
+  private TimePanel(isEnd: boolean) {
+    Column({ space: Space.xs }) {
       Flex({ wrap: FlexWrap.Wrap }) {
         ForEach(TIME_PRESETS, (preset: QuickTimePreset) => {
           Button(preset.label)
             .type(ButtonType.Normal)
-            .constraintSize({ minHeight: 36 })
-            .fontSize(TypeSize.bodySmall)
-            .fontWeight(this.date.getHours() === preset.hour && this.date.getMinutes() === preset.minute
+            .constraintSize({ minHeight: 32 })
+            .fontSize(TypeSize.meta)
+            .fontWeight(new Date(isEnd ? this.endAt : this.startAt).getHours() === preset.hour &&
+              new Date(isEnd ? this.endAt : this.startAt).getMinutes() === preset.minute
               ? TypeWeight.semibold : TypeWeight.regular)
-            .fontColor(this.date.getHours() === preset.hour && this.date.getMinutes() === preset.minute
+            .fontColor(new Date(isEnd ? this.endAt : this.startAt).getHours() === preset.hour &&
+              new Date(isEnd ? this.endAt : this.startAt).getMinutes() === preset.minute
               ? Colors.bg : Colors.inkSoft)
-            .backgroundColor(this.date.getHours() === preset.hour && this.date.getMinutes() === preset.minute
+            .backgroundColor(new Date(isEnd ? this.endAt : this.startAt).getHours() === preset.hour &&
+              new Date(isEnd ? this.endAt : this.startAt).getMinutes() === preset.minute
               ? Colors.ink : Colors.wash)
             .borderRadius(Radius.chip)
-            .padding({ left: Space.md, right: Space.md })
+            .padding({ left: Space.sm, right: Space.sm })
             .margin({ right: Space.xs, bottom: Space.xs })
-            .onClick(() => this.setClock(preset.hour, preset.minute));
+            .onClick(() => this.setClockFor(isEnd, preset.hour, preset.minute));
         }, (preset: QuickTimePreset) => preset.label);
       }
       .width('100%');
@@ -606,141 +782,244 @@ export struct MatterDateEditor {
           .backgroundColor(Colors.wash)
           .hitTestBehavior(HitTestMode.None)
           .accessibilityLevel('no');
-        TimePicker({ selected: this.date })
-          .width(156)
+        TimePicker({ selected: new Date(isEnd ? this.endAt : this.startAt) })
+          .key(isEnd ? 'matter-end-clock' : 'matter-start-clock')
+          .width(152)
           .height(TIME_WHEEL_HEIGHT)
           .backgroundColor(Color.Transparent)
           .useMilitaryTime(true)
           .dateTimeOptions({ hour: '2-digit', minute: '2-digit' })
-          .selectedTextStyle({ color: Colors.ink, font: { size: 22, weight: TypeWeight.semibold } })
-          .textStyle({ color: Colors.inkSoft, font: { size: 17 } })
+          .selectedTextStyle({ color: Colors.ink, font: { size: 21, weight: TypeWeight.semibold } })
+          .textStyle({ color: Colors.inkSoft, font: { size: 16 } })
           .disappearTextStyle({ color: Colors.inkMuted, font: { size: 13 } })
           .onChange((result: TimePickerResult) => {
-            this.setClock(result.hour ?? this.date.getHours(), result.minute ?? this.date.getMinutes());
+            const cur = new Date(isEnd ? this.endAt : this.startAt);
+            this.setClockFor(isEnd, result.hour ?? cur.getHours(), result.minute ?? cur.getMinutes());
           });
       }
       .width('100%')
       .height(TIME_WHEEL_HEIGHT);
     }
     .width('100%')
-    .padding(Space.md)
+    .padding(Space.sm)
     .backgroundColor(Colors.bg)
     .borderRadius(Radius.card)
     .border({ width: 1, color: Colors.hairline });
   }
 
   @Builder
-  private toggleField(label: string, value: string, open: boolean, onToggle: () => void) {
-    Column({ space: Space.sm }) {
-      Text(label)
-        .fontSize(TypeSize.bodySmall)
-        .fontWeight(TypeWeight.regular)
-        .fontColor(Colors.inkSoft)
-        .width('100%');
-      Button({ type: ButtonType.Normal }) {
-        Row() {
-          Text(value)
-            .fontSize(TypeSize.body)
-            .fontWeight(TypeWeight.semibold)
-            .fontColor(Colors.ink)
-            .fontFeature(TABULAR_NUMS);
-          Blank();
-          Text(open ? '收起 ⌃' : '选择 ⌄')
-            .fontSize(TypeSize.meta)
-            .fontColor(Colors.inkMuted);
-        }
-        .width('100%')
-        .padding({ left: Space.md, right: Space.md });
+  private DayCountPopupMenu() {
+    Column() {
+      this.PopupOptionRow('不计算天数', this.dayCountMode === 'none', () => this.selectDayCount('none'));
+      this.PopupOptionRow('倒数日（距离还有几天）', this.dayCountMode === 'countdown', () => this.selectDayCount('countdown'));
+      this.PopupOptionRow('正数日（起始已过几天）', this.dayCountMode === 'elapsed', () => this.selectDayCount('elapsed'));
+    }
+    .width(204)
+    .padding(Space.xs);
+  }
+
+  @Builder
+  private ReminderPopupMenu() {
+    Scroll() {
+      Column() {
+        ForEach(REMINDER_ITEMS, (mins: number) => {
+          this.PopupOptionRow(
+            timelineReminderLabel(mins < 0 ? undefined : mins),
+            mins === this.reminderMinutes,
+            () => {
+              this.reminderMinutes = mins;
+              this.popup = ActivePopup.None;
+              this.onChanged();
+            }
+          );
+        }, (mins: number) => `${mins}`);
       }
       .width('100%')
-      .constraintSize({ minHeight: 44 })
-      .backgroundColor(Colors.wash)
-      .borderRadius(Radius.card)
-      .onClick(onToggle);
+      .padding(Space.xs);
+    }
+    .width(176)
+    .constraintSize({ maxHeight: 248 });
+  }
+
+  @Builder
+  private RepeatPopupMenu() {
+    Scroll() {
+      Column() {
+        ForEach(REPEAT_ITEMS, (rule: TimelineRepeat) => {
+          this.PopupOptionRow(
+            timelineRepeatLabel(rule),
+            rule === this.repeat,
+            () => {
+              this.repeat = rule;
+              this.popup = ActivePopup.None;
+              this.onChanged();
+            }
+          );
+        }, (rule: TimelineRepeat) => rule);
+      }
+      .width('100%')
+      .padding(Space.xs);
+    }
+    .width(168)
+    .constraintSize({ maxHeight: 224 });
+  }
+
+  @Builder
+  private PopupOptionRow(label: string, selected: boolean, action: () => void) {
+    Button({ type: ButtonType.Normal }) {
+      Row() {
+        Text(label)
+          .layoutWeight(1)
+          .fontSize(TypeSize.bodySmall)
+          .fontWeight(selected ? TypeWeight.semibold : TypeWeight.regular)
+          .fontColor(selected ? Colors.ink : Colors.inkSoft);
+        if (selected) {
+          Text('✓')
+            .fontSize(TypeSize.bodySmall)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink);
+        }
+      }
+      .width('100%');
     }
     .width('100%')
-    .alignItems(HorizontalAlign.Start);
+    .height(40)
+    .padding({ left: Space.sm, right: Space.sm })
+    .backgroundColor(selected ? Colors.wash : Color.Transparent)
+    .borderRadius(Radius.card)
+    .onClick(action);
+  }
+
+  @Builder
+  private FeatureChipsRow() {
+    Flex({ wrap: FlexWrap.Wrap }) {
+      // 1. 天数胶囊
+      Button({ type: ButtonType.Normal }) {
+        Row({ space: 4 }) {
+          Text(this.dayCountChipLabel())
+            .fontSize(TypeSize.meta)
+            .fontWeight(this.dayCountMode !== 'none' ? TypeWeight.semibold : TypeWeight.regular)
+            .fontColor(this.dayCountMode !== 'none' ? Colors.bg : Colors.inkSoft);
+          Text('▾')
+            .fontSize(11)
+            .fontColor(this.dayCountMode !== 'none' ? Colors.bg : Colors.inkMuted);
+        }
+      }
+      .constraintSize({ minHeight: 34 })
+      .padding({ left: Space.sm, right: Space.sm })
+      .margin({ right: Space.xs, bottom: Space.xs })
+      .backgroundColor(this.dayCountMode !== 'none' ? Colors.ink : Colors.wash)
+      .borderRadius(Radius.chip)
+      .onClick(() => {
+        this.drawer = ActiveDrawer.None;
+        this.popup = this.popup === ActivePopup.DayCount ? ActivePopup.None : ActivePopup.DayCount;
+      })
+      .bindPopup(this.popup === ActivePopup.DayCount, {
+        builder: this.DayCountPopupMenu,
+        placement: Placement.Bottom,
+        enableArrow: false,
+        popupColor: Colors.card,
+        autoCancel: true,
+        onStateChange: (ev) => { if (!ev.isVisible && this.popup === ActivePopup.DayCount) this.popup = ActivePopup.None; }
+      });
+
+      // 2. 提醒胶囊
+      Button({ type: ButtonType.Normal }) {
+        Row({ space: 4 }) {
+          Text(this.reminderMinutes >= 0
+            ? `提醒 · ${timelineReminderLabel(this.reminderMinutes)}`
+            : '提醒')
+            .fontSize(TypeSize.meta)
+            .fontWeight(this.reminderMinutes >= 0 ? TypeWeight.semibold : TypeWeight.regular)
+            .fontColor(this.reminderMinutes >= 0 ? Colors.bg : Colors.inkSoft);
+          Text('▾')
+            .fontSize(11)
+            .fontColor(this.reminderMinutes >= 0 ? Colors.bg : Colors.inkMuted);
+        }
+      }
+      .constraintSize({ minHeight: 34 })
+      .padding({ left: Space.sm, right: Space.sm })
+      .margin({ right: Space.xs, bottom: Space.xs })
+      .backgroundColor(this.reminderMinutes >= 0 ? Colors.ink : Colors.wash)
+      .borderRadius(Radius.chip)
+      .onClick(() => {
+        this.drawer = ActiveDrawer.None;
+        this.popup = this.popup === ActivePopup.Reminder ? ActivePopup.None : ActivePopup.Reminder;
+      })
+      .bindPopup(this.popup === ActivePopup.Reminder, {
+        builder: this.ReminderPopupMenu,
+        placement: Placement.Bottom,
+        enableArrow: false,
+        popupColor: Colors.card,
+        autoCancel: true,
+        onStateChange: (ev) => { if (!ev.isVisible && this.popup === ActivePopup.Reminder) this.popup = ActivePopup.None; }
+      });
+
+      // 3. 重复胶囊（正数日不重复）
+      if (this.dayCountMode !== 'elapsed') {
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: 4 }) {
+            Text(this.repeat !== TimelineRepeat.None
+              ? `重复 · ${timelineRepeatLabel(this.repeat)}`
+              : '重复')
+              .fontSize(TypeSize.meta)
+              .fontWeight(this.repeat !== TimelineRepeat.None ? TypeWeight.semibold : TypeWeight.regular)
+              .fontColor(this.repeat !== TimelineRepeat.None ? Colors.bg : Colors.inkSoft);
+            Text('▾')
+              .fontSize(11)
+              .fontColor(this.repeat !== TimelineRepeat.None ? Colors.bg : Colors.inkMuted);
+          }
+        }
+        .constraintSize({ minHeight: 34 })
+        .padding({ left: Space.sm, right: Space.sm })
+        .margin({ right: Space.xs, bottom: Space.xs })
+        .backgroundColor(this.repeat !== TimelineRepeat.None ? Colors.ink : Colors.wash)
+        .borderRadius(Radius.chip)
+        .onClick(() => {
+          this.drawer = ActiveDrawer.None;
+          this.popup = this.popup === ActivePopup.Repeat ? ActivePopup.None : ActivePopup.Repeat;
+        })
+        .bindPopup(this.popup === ActivePopup.Repeat, {
+          builder: this.RepeatPopupMenu,
+          placement: Placement.Bottom,
+          enableArrow: false,
+          popupColor: Colors.card,
+          autoCancel: true,
+          onStateChange: (ev) => { if (!ev.isVisible && this.popup === ActivePopup.Repeat) this.popup = ActivePopup.None; }
+        });
+      }
+    }
+    .width('100%');
+
+    if (this.repeatHint().length > 0) {
+      Text(this.repeatHint())
+        .width('100%')
+        .fontSize(TypeSize.meta)
+        .fontColor(Colors.inkMuted);
+    }
   }
 
   build() {
     Column({ space: Space.sm }) {
-      Text('你想怎样使用这个日期？')
-        .fontSize(TypeSize.bodySmall)
-        .fontWeight(TypeWeight.regular)
-        .fontColor(Colors.inkSoft)
-        .width('100%');
+      this.SpanSegment();
 
-      this.modeOption('countdown', '倒数日', '看距离某一天还有多少天');
-      this.modeOption('elapsed', '正数日', '看从某一天起已经过多少天');
-      this.modeOption('deadline', '截止时间', '标记最晚何时完成');
+      if (this.span === 'range') {
+        this.RangeRows();
+      } else {
+        this.SingleDateRow();
+      }
 
-      this.toggleField(this.dateLabel(), this.formattedDateWithWeekday(), this.calendarOpen, () => {
-        this.calendarOpen = !this.calendarOpen;
-        if (this.calendarOpen) {
-          this.timeOpen = false;
-          this.pickingYearMonth = false;
-          this.syncCalendarView(this.date);
-        }
-      });
-
-      this.QuickDateBar();
-
-      if (this.calendarOpen) {
+      if (this.drawer === ActiveDrawer.StartDay || this.drawer === ActiveDrawer.EndDay) {
         this.CalendarPanel();
+      } else if (this.drawer === ActiveDrawer.StartClock) {
+        this.TimePanel(false);
+      } else if (this.drawer === ActiveDrawer.EndClock) {
+        this.TimePanel(true);
       }
 
-      if (this.mode === 'deadline') {
-        Row({ space: Space.md }) {
-          Stack({ alignContent: Alignment.Center }) {
-            Column()
-              .width(20)
-              .height(20)
-              .borderRadius(Radius.chip)
-              .backgroundColor(this.hasTime ? Colors.ink : Color.Transparent)
-              .border({ width: 1, color: this.hasTime ? Colors.ink : Colors.line });
-            if (this.hasTime) {
-              Text('✓')
-                .fontSize(TypeSize.meta)
-                .fontWeight(TypeWeight.semibold)
-                .fontColor(Colors.bg);
-            }
-          }
-          .width(20)
-          .height(20);
+      Divider().color(Colors.hairline);
 
-          Text('设置具体时间')
-            .fontSize(TypeSize.body)
-            .fontWeight(TypeWeight.regular)
-            .fontColor(Colors.ink);
-        }
-        .width('100%')
-        .constraintSize({ minHeight: 48 })
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => {
-          if (!this.hasTime) {
-            const next = new Date(this.date.getTime());
-            next.setHours(18, 0, 0, 0);
-            this.date = next;
-            this.hasTime = true;
-          } else {
-            this.hasTime = false;
-            this.timeOpen = false;
-          }
-        });
-
-        if (this.hasTime) {
-          this.toggleField('具体时间', pad2(this.date.getHours()) + ':' + pad2(this.date.getMinutes()),
-            this.timeOpen, () => {
-              this.timeOpen = !this.timeOpen;
-              if (this.timeOpen) {
-                this.calendarOpen = false;
-              }
-            });
-          if (this.timeOpen) {
-            this.TimePanel();
-          }
-        }
-      }
+      this.FeatureChipsRow();
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start);

@@ -32,7 +32,9 @@ export function createCardBindingData(store: MatterStore, formId: string = ''): 
   const matterId = primaryMatter ? primaryMatter.id : '';
   const primary = primaryMatter ? store.cardPrimaryText(primaryMatter) : '暂无事项';
   const secondary = primaryMatter ? store.moduleSummary(primaryMatter) : '打开 App 创建事项';
-  const color = primaryMatter ? store.clusterColor(primaryMatter.clusterId) : '';
+  const color = primaryMatter
+    ? (primaryMatter.clusterId ? store.clusterColor(primaryMatter.clusterId) : (store.matterTag(primaryMatter)?.color ?? ''))
+    : '';
   const quickActionLabel = primaryMatter ? store.cardQuickActionLabel(primaryMatter) : '打开';
   const quickActionType = primaryMatter ? store.cardQuickActionType(primaryMatter) : 'open';
 
@@ -70,5 +72,8 @@ function rowPrimary(store: MatterStore, matters: Matter[], index: number): strin
 }
 
 function rowColor(store: MatterStore, matters: Matter[], index: number): string {
-  return matters.length > index ? store.clusterColor(matters[index].clusterId) : '#D8DEE8';
+  if (matters.length <= index) return '#D8DEE8';
+  const matter = matters[index];
+  if (matter.clusterId) return store.clusterColor(matter.clusterId);
+  return store.matterTag(matter)?.color ?? '#D8DEE8';
 }

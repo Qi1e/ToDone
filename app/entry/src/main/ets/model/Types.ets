@@ -1,9 +1,12 @@
+import { TimelineAttachment, TimelineOverride, TimelineRepeat, TimelineTag } from '../contracts/TimelineService';
+
 export enum ModuleType {
   EventRecord = 'EventRecord',
   Counter = 'Counter',
   Progress = 'Progress',
   Deadline = 'Deadline',
   Countdown = 'Countdown',
+  Tag = 'Tag',
   Note = 'Note',
   Checklist = 'Checklist'
 }
@@ -13,6 +16,7 @@ export interface Matter {
   id: string;
   title: string;
   description?: string;
+  tagId?: string;
   createdAt: number;
   updatedAt: number;
   archived: boolean;
@@ -46,7 +50,8 @@ export interface EventRecordEntry {
   note?: string;
 }
 
-export type CounterMode = 'fixed' | 'variable' | 'daily_once';
+export type ActiveCounterMode = 'tally' | 'amount' | 'daily_once';
+export type CounterMode = ActiveCounterMode | 'fixed' | 'variable';
 
 export interface CounterConfig {
   mode: CounterMode;
@@ -60,6 +65,7 @@ export interface CounterEntry {
   matterId: string;
   value: number;
   timestamp: number;
+  note?: string;
 }
 
 export type ProgressMode = 'manual_percent' | 'target_value';
@@ -74,16 +80,32 @@ export interface ProgressConfig {
 }
 
 export type DateMode = 'deadline' | 'countdown' | 'elapsed';
+export type TimeSpanMode = 'all_day' | 'range' | 'point';
+export type DayCountMode = 'none' | 'countdown' | 'elapsed';
 
 export interface DeadlineConfig {
   mode?: DateMode;
+  span?: TimeSpanMode;
+  dayCountMode?: DayCountMode;
   timestamp: number;
+  endAt?: number;
   hasTime: boolean;
   location?: string;
+  reminderMinutes?: number;
+  repeat?: TimelineRepeat;
+  repeatFromDay?: number;
+  repeatUntilDay?: number;
+  excludedDays?: number[];
+  overrides?: TimelineOverride[];
+}
+
+export interface TagConfig {
+  tagId: string;
 }
 
 export interface NoteConfig {
   text: string;
+  attachments?: TimelineAttachment[];
 }
 
 export interface ChecklistItem {
@@ -101,6 +123,8 @@ export interface ChecklistItem {
 export interface AppState {
   matters: Matter[];
   clusters: Cluster[];
+  tags?: TimelineTag[];
+  timelineImported?: boolean;
   eventRecords: EventRecordEntry[];
   counterEntries: CounterEntry[];
   checklistItems: ChecklistItem[];
@@ -114,10 +138,21 @@ export interface CreateMatterIntent {
   description?: string;
   enabledModuleTypes?: ModuleType[];
   deadlineTimestamp?: number;
+  deadlineEndAt?: number;
+  deadlineSpan?: TimeSpanMode;
+  dayCountMode?: DayCountMode;
   deadlineMode?: DateMode;
   deadlineHasTime?: boolean;
   deadlineLocation?: string;
+  reminderMinutes?: number;
+  repeat?: TimelineRepeat;
+  tagId?: string;
+  counterMode?: ActiveCounterMode;
+  counterUnit?: string;
+  counterInitial?: number;
+  counterSteps?: number[];
   note?: string;
+  attachments?: TimelineAttachment[];
 }
 
 export interface ModuleOption {

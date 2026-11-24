@@ -1,3 +1,4 @@
+import { TimelineTag } from '../contracts/TimelineService';
 import { applyEditor, editorDraft, EditorDraft, EditorItem } from './MatterEditor';
 import { daysUntil } from '../common/DateFormat';
 import { CreateMatterRequest, CreateMatterResult, MatterRepository, MatterService } from '../contracts/MatterService';
@@ -6,6 +7,7 @@ import { AppState, ChecklistItem, Matter, ModuleInstance, ModuleType } from '../
 import { canLinkMatterInState } from './MatterLinks';
 import { MatterOperation } from '../contracts/MatterPersistence';
 import { MatterDataError, matterErrorMessage } from './MatterSnapshot';
+import { MatterState } from './MatterState';
 
 interface PendingMatterSave {
   operation: MatterOperation;
@@ -38,8 +40,19 @@ export class DefaultMatterService implements MatterService {
       !draft.items.some((i: EditorItem) => i.targetId === m.id));
   }
 
-  loadEditor(id: string): EditorDraft | undefined {
-    return editorDraft(this.repository.readState(), id);
+  loadEditor(id: string, occurrenceStart?: number): EditorDraft | undefined {
+    return editorDraft(this.repository.readState(), id, occurrenceStart);
+  }
+
+  listTags(): TimelineTag[] {
+    return new MatterState(this.repository.readState()).listTags();
+  }
+
+  async saveTag(tag: TimelineTag): Promise<TimelineTag> {
+    const operation: MatterOperation = { id: createId('tag_op'), fingerprint: 'tag:' + JSON.stringify(tag) };
+    return this.repository.transact(operation, (state: AppState): TimelineTag => {
+      return new MatterState(state).saveTag(tag);
+    });
   }
 
   async saveEditor(draft: EditorDraft, ownerId: string): Promise<CreateMatterResult> {
@@ -59,6 +72,14 @@ export class DefaultMatterService implements MatterService {
 
   activeMatters(): Matter[] {
     return this.sortedMatters().filter((matter: Matter) => !matter.archived);
+  }
+
+  residentActiveMatters(): Matter[] {
+    return new MatterState(this.repository.readState()).residentActiveMatters();
+  }
+
+  mattersForDay(dayTimestamp: number): Matter[] {
+    return new MatterState(this.repository.readState()).mattersForDay(dayTimestamp);
   }
 
   archivedMatters(): Matter[] {
@@ -83,9 +104,13 @@ export class DefaultMatterService implements MatterService {
       (intent.deadlineTimestamp === undefined || !Number.isFinite(intent.deadlineTimestamp))) {
       return this.failure('invalid_deadline', '请选择有效的截止日期');
     }
-    if (intent.deadlineMode === 'elapsed' && intent.deadlineTimestamp !== undefined &&
-      daysUntil(intent.deadlineTimestamp) > 0) {
+    if ((intent.deadlineMode === 'elapsed' || intent.dayCountMode === 'elapsed') &&
+      intent.deadlineTimestamp !== undefined && daysUntil(intent.deadlineTimestamp) > 0) {
       return this.failure('invalid_deadline', '正数日的起始日期不能晚于今天');
+    }
+    if (intent.deadlineSpan === 'range' && (intent.deadlineEndAt === undefined ||
+      intent.deadlineTimestamp === undefined || !(intent.deadlineEndAt > intent.deadlineTimestamp))) {
+      return this.failure('invalid_deadline', '结束时间须晚于开始时间');
     }
     const titles = (request.checklistTitles ?? []).map((title: string) => title.trim())
       .filter((title: string) => title.length > 0);

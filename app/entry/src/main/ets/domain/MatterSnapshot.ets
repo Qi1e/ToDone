@@ -18,6 +18,7 @@ export function emptyMatterState(): AppState {
 export function normalizeMatterState(input: AppState): AppState {
   if (!input || !Array.isArray(input.matters) ||
     (input.clusters !== undefined && !Array.isArray(input.clusters)) ||
+    (input.tags !== undefined && !Array.isArray(input.tags)) ||
     (input.eventRecords !== undefined && !Array.isArray(input.eventRecords)) ||
     (input.counterEntries !== undefined && !Array.isArray(input.counterEntries)) ||
     (input.checklistItems !== undefined && !Array.isArray(input.checklistItems)) ||

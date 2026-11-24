@@ -1,3 +1,4 @@
+import { TimelineTag } from './TimelineService';
 import { EditorDraft } from '../domain/MatterEditor';
 import { AppState, CreateMatterIntent, Matter } from '../model/Types';
 import { MatterOperation } from './MatterPersistence';
@@ -18,9 +19,13 @@ export interface CreateMatterResult {
 
 export interface MatterService {
   linkCandidates(draft: EditorDraft, ownerId: string): Matter[];
-  loadEditor(id: string): EditorDraft | undefined;
+  loadEditor(id: string, occurrenceStart?: number): EditorDraft | undefined;
   saveEditor(draft: EditorDraft, ownerId: string): Promise<CreateMatterResult>;
+  listTags(): TimelineTag[];
+  saveTag(tag: TimelineTag): Promise<TimelineTag>;
   activeMatters(): Matter[];
+  residentActiveMatters(): Matter[];
+  mattersForDay(dayTimestamp: number): Matter[];
   archivedMatters(): Matter[];
   findMatter(id: string): Matter | undefined;
   createMatter(request: CreateMatterRequest): Promise<CreateMatterResult>;

@@ -1,6 +1,33 @@
+import {
+  copyTimelineAttachments,
+  TimelineAttachment,
+  TimelineBlock,
+  TimelineDeleteScope,
+  TimelineRepeat,
+  TimelineTag
+} from '../contracts/TimelineService';
 import { canLinkMatterInState } from './MatterLinks';
+import {
+  deleteMatterScheduleScope,
+  effectiveMatterNote,
+  effectiveMatterTagId,
+  importLegacyTimelineIntoState,
+  isLightScheduleMatter,
+  matterMatchesDay,
+  mattersForDayInState,
+  stateReminderBlocks,
+  stateTimelineBlocks
+} from './MatterSchedule';
 import { MatterDataError } from './MatterSnapshot';
-import { dateModeLabel, dateSummary, isToday } from '../common/DateFormat';
+import {
+  dateSummary,
+  effectiveDayCountMode,
+  effectiveSpan,
+  isToday,
+  timeConfigTitle
+} from '../common/DateFormat';
+import { localDayStart } from './TimelineLayout';
+import { planTimelineReminders, TimelineReminderPlan } from './TimelineReminderPlan';
 import {
   appendDeckExamples,
   CLUSTER_COLORS,
@@ -8,24 +35,28 @@ import {
   createMatter,
   createModuleInstance,
   createSeedState,
+  DEFAULT_MATTER_TAGS,
   defaultConfigJson,
-  moduleLabel
+  moduleLabel,
+  stripTagEmoji
 } from '../model/Defaults';
 import {
+  ActiveCounterMode,
   AppState,
   ChecklistItem,
   Cluster,
+  CounterConfig,
   CounterEntry,
   CreateMatterIntent,
-  CounterConfig,
-  DeadlineConfig,
   DateMode,
+  DeadlineConfig,
   EventRecordEntry,
   Matter,
   ModuleInstance,
   ModuleType,
   NoteConfig,
-  ProgressConfig
+  ProgressConfig,
+  TagConfig
 } from '../model/Types';
 
 // 所有规则只作用于调用方提供的候选状态，持久化由仓库负责。
@@ -42,6 +73,121 @@ export class MatterState {
 
   activeMatters(): Matter[] {
     return this.allMatters().filter((matter: Matter) => !matter.archived);
+  }
+
+  residentActiveMatters(): Matter[] {
+    return this.activeMatters().filter((matter: Matter) => !isLightScheduleMatter(matter));
+  }
+
+  isLightSchedule(matter: Matter): boolean {
+    return isLightScheduleMatter(matter);
+  }
+
+  mattersForDay(dayTimestamp: number): Matter[] {
+    return mattersForDayInState(this.state, dayTimestamp);
+  }
+
+  dayScheduleCount(dayTimestamp: number): number {
+    return this.mattersForDay(dayTimestamp).length;
+  }
+
+  todayLightScheduleCount(todayTimestamp: number = Date.now()): number {
+    return this.mattersForDay(todayTimestamp).filter((m: Matter) => isLightScheduleMatter(m)).length;
+  }
+
+  matterMatchesSelectedDay(matter: Matter, dayTimestamp: number): boolean {
+    return matterMatchesDay(this.state, matter, dayTimestamp);
+  }
+
+  timelineBlocks(): TimelineBlock[] {
+    return stateTimelineBlocks(this.state);
+  }
+
+  reminderBlocks(): TimelineBlock[] {
+    return stateReminderBlocks(this.state);
+  }
+
+  planReminders(now: number, capacity: number): TimelineReminderPlan {
+    return planTimelineReminders(this.reminderBlocks(), now, capacity);
+  }
+
+  importLegacyTimeline(blocks: TimelineBlock[], tags: TimelineTag[]): number {
+    const imported = importLegacyTimelineIntoState(this.state, blocks, tags);
+    if (imported > 0) {
+      this.reindexArchivedAfterActive();
+    }
+    return imported;
+  }
+
+  listTags(): TimelineTag[] {
+    const source = this.state.tags && this.state.tags.length > 0 ? this.state.tags : DEFAULT_MATTER_TAGS;
+    const uses = new Map<string, number>();
+    for (const matter of this.state.matters) {
+      if (matter.archived) continue;
+      const tagId = effectiveMatterTagId(this.state, matter);
+      if (tagId) uses.set(tagId, (uses.get(tagId) ?? 0) + 1);
+    }
+    return source
+      .map((tag: TimelineTag): TimelineTag => ({ id: tag.id, name: stripTagEmoji(tag.name) || tag.name.trim(), color: tag.color.toUpperCase() }))
+      .sort((a: TimelineTag, b: TimelineTag) => (uses.get(b.id) ?? 0) - (uses.get(a.id) ?? 0));
+  }
+
+  findTag(tagId?: string): TimelineTag | undefined {
+    if (!tagId) return undefined;
+    return this.listTags().find((t: TimelineTag) => t.id === tagId);
+  }
+
+  matterTag(matter: Matter): TimelineTag | undefined {
+    const tagId = effectiveMatterTagId(this.state, matter);
+    return this.findTag(tagId);
+  }
+
+  saveTag(tag: TimelineTag): TimelineTag {
+    const cleanName = stripTagEmoji(tag.name);
+    if (!tag.id.trim() || !cleanName) {
+      throw new MatterDataError('MAT-TAG', '请输入纯文字标签名称');
+    }
+    if (!/^#[0-9a-fA-F]{6}$/.test(tag.color.trim())) {
+      throw new MatterDataError('MAT-TAG', '请选择有效的标签颜色');
+    }
+    if (!this.state.tags || this.state.tags.length === 0) {
+      this.state.tags = DEFAULT_MATTER_TAGS.map((t: TimelineTag): TimelineTag => ({ id: t.id, name: t.name, color: t.color }));
+    }
+    if (this.state.tags.some((item: TimelineTag) => item.id !== tag.id && stripTagEmoji(item.name) === cleanName)) {
+      throw new MatterDataError('MAT-TAG', '这个标签名已存在');
+    }
+    const saved: TimelineTag = {
+      id: tag.id.trim(),
+      name: cleanName,
+      color: tag.color.trim().toUpperCase()
+    };
+    const index = this.state.tags.findIndex((item: TimelineTag) => item.id === saved.id);
+    if (index < 0) this.state.tags.push(saved);
+    else this.state.tags[index] = saved;
+    return { id: saved.id, name: saved.name, color: saved.color };
+  }
+
+  allReferencedAttachments(): TimelineAttachment[] {
+    const result: TimelineAttachment[] = [];
+    for (const matter of this.state.matters) {
+      const modules = matter.enabledModules.concat(matter.disabledModules ?? []);
+      for (const mod of modules) {
+        if (mod.moduleType === ModuleType.Note) {
+          try {
+            const cfg = JSON.parse(mod.configJson) as NoteConfig;
+            if (cfg.attachments) result.push(...cfg.attachments);
+          } catch (error) {}
+        } else if (mod.moduleType === ModuleType.Deadline) {
+          try {
+            const cfg = JSON.parse(mod.configJson) as DeadlineConfig;
+            for (const ov of cfg.overrides ?? []) {
+              if (ov.attachments) result.push(...ov.attachments);
+            }
+          } catch (error) {}
+        }
+      }
+    }
+    return result;
   }
 
   archivedMatters(): Matter[] {
@@ -92,6 +238,13 @@ export class MatterState {
     this.state.summaryCardMatterIds = this.state.summaryCardMatterIds.filter((matterId: string) => matterId !== id);
     this.removeEmptyClusters();
     this.reindexMatters();
+  }
+
+  deleteScheduleOccurrence(id: string, scope: TimelineDeleteScope = TimelineDeleteScope.All, occurrenceStart?: number): void {
+    const removeWhole = deleteMatterScheduleScope(this.state, id, scope, occurrenceStart);
+    if (removeWhole) {
+      this.deleteMatter(id);
+    }
   }
 
   moveMatterByDelta(id: string, delta: number): void {
@@ -212,9 +365,13 @@ export class MatterState {
     return matter.enabledModules.some((module: ModuleInstance) => module.moduleType === type);
   }
 
+  hasCounterLikeModule(matter: Matter): boolean {
+    return this.hasModule(matter, ModuleType.Counter) || this.hasModule(matter, ModuleType.EventRecord);
+  }
+
   toggleModule(matterId: string, type: ModuleType): void {
     const matter = this.findMatter(matterId);
-    if (!matter || type === ModuleType.Countdown || type === ModuleType.Progress) {
+    if (!matter || type === ModuleType.Countdown) {
       return;
     }
     const index = matter.enabledModules.findIndex((module: ModuleInstance) => module.moduleType === type);
@@ -226,13 +383,20 @@ export class MatterState {
           return module.moduleType !== ModuleType.Countdown;
         });
       }
+      if (type === ModuleType.Tag) {
+        matter.tagId = undefined;
+      }
     } else {
       const hidden = matter.disabledModules ?? [];
       const previous = hidden.find((module: ModuleInstance) => module.moduleType === type);
-      matter.enabledModules.push(previous ?? createModuleInstance(matterId, type));
+      const added = previous ?? createModuleInstance(matterId, type);
+      matter.enabledModules.push(added);
       matter.disabledModules = hidden.filter((module: ModuleInstance) => module.moduleType !== type);
-      if (type === ModuleType.Deadline && !this.hasModule(matter, ModuleType.Countdown)) {
-        matter.enabledModules.push(createModuleInstance(matterId, ModuleType.Countdown));
+      if (type === ModuleType.Tag) {
+        try {
+          const cfg = JSON.parse(added.configJson) as TagConfig;
+          matter.tagId = cfg.tagId || undefined;
+        } catch (error) {}
       }
     }
     matter.updatedAt = Date.now();
@@ -274,12 +438,18 @@ export class MatterState {
   }
 
   addEventRecord(matterId: string, note?: string): void {
-    if (!this.findMatter(matterId)) throw new MatterDataError('MAT-MISSING', '事项已不存在，请重新加载');
+    const matter = this.findMatter(matterId);
+    if (!matter) throw new MatterDataError('MAT-MISSING', '事项已不存在，请重新加载');
+    // 若已升级为统一 Counter 且不含旧 EventRecord 模块，直接记入计数流水
+    if (this.hasModule(matter, ModuleType.Counter) && !this.hasModule(matter, ModuleType.EventRecord)) {
+      this.addCounterEntry(matterId, 1, note);
+      return;
+    }
     this.state.eventRecords.push({
       id: createId('event'),
       matterId,
       timestamp: Date.now(),
-      note
+      note: note?.trim() || undefined
     });
   }
 
@@ -296,51 +466,155 @@ export class MatterState {
     }).length;
   }
 
-  addCounterEntry(matterId: string, value: number): void {
+  addCounterEntry(matterId: string, value: number, note?: string): void {
     if (!this.findMatter(matterId)) throw new MatterDataError('MAT-MISSING', '事项已不存在，请重新加载');
     if (!Number.isFinite(value)) throw new MatterDataError('MAT-VALUE', '请输入有效数值');
     if (value === 0) {
       return;
     }
+    const cleanNote = note?.trim();
     this.state.counterEntries.push({
       id: createId('counter'),
       matterId,
       value,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      note: cleanNote && cleanNote.length > 0 ? cleanNote : undefined
     });
   }
 
-  markDailyOnce(matterId: string): void {
+  removeCounterEntry(entryId: string): void {
+    this.state.counterEntries = this.state.counterEntries.filter((entry: CounterEntry) => entry.id !== entryId);
+    this.state.eventRecords = this.state.eventRecords.filter((entry: EventRecordEntry) => entry.id !== entryId);
+  }
+
+  private isLegacyEventOnly(matterId: string): boolean {
+    const matter = this.findMatter(matterId);
+    if (!matter) return false;
+    return this.hasModule(matter, ModuleType.EventRecord) && !this.hasModule(matter, ModuleType.Counter);
+  }
+
+  private rawEntriesForCounter(matterId: string): CounterEntry[] {
+    const entries = this.state.counterEntries
+      .filter((entry: CounterEntry) => entry.matterId === matterId)
+      .slice();
+    if (this.isLegacyEventOnly(matterId)) {
+      const legacy = this.state.eventRecords
+        .filter((e: EventRecordEntry) => e.matterId === matterId)
+        .map((e: EventRecordEntry): CounterEntry => ({
+          id: e.id,
+          matterId: e.matterId,
+          value: 1,
+          timestamp: e.timestamp,
+          note: e.note
+        }));
+      entries.push(...legacy);
+    }
+    return entries.sort((a: CounterEntry, b: CounterEntry) => b.timestamp - a.timestamp);
+  }
+
+  counterEntriesFor(matterId: string, limit: number = 12): CounterEntry[] {
+    return this.rawEntriesForCounter(matterId).slice(0, limit);
+  }
+
+  isDailyDoneToday(matterId: string, now: number = Date.now()): boolean {
+    return this.rawEntriesForCounter(matterId).some((entry: CounterEntry) =>
+      isToday(entry.timestamp, now) && entry.value > 0);
+  }
+
+  markDailyOnce(matterId: string, note?: string): void {
     const done = this.state.counterEntries.some((entry: CounterEntry) => {
       return entry.matterId === matterId && isToday(entry.timestamp) && entry.value === 1;
     });
     if (!done) {
-      this.addCounterEntry(matterId, 1);
+      this.addCounterEntry(matterId, 1, note);
     }
   }
 
+  toggleDailyOnce(matterId: string, note?: string): boolean {
+    if (!this.findMatter(matterId)) throw new MatterDataError('MAT-MISSING', '事项已不存在，请重新加载');
+    if (this.isDailyDoneToday(matterId)) {
+      this.state.counterEntries = this.state.counterEntries.filter((entry: CounterEntry) =>
+        !(entry.matterId === matterId && isToday(entry.timestamp)));
+      if (this.isLegacyEventOnly(matterId)) {
+        this.state.eventRecords = this.state.eventRecords.filter((entry: EventRecordEntry) =>
+          !(entry.matterId === matterId && isToday(entry.timestamp)));
+      }
+      return false;
+    }
+    this.addCounterEntry(matterId, 1, note);
+    return true;
+  }
+
+  counterStreakDays(matterId: string, now: number = Date.now()): number {
+    const entries = this.rawEntriesForCounter(matterId).filter((e: CounterEntry) => e.value > 0);
+    if (entries.length === 0) return 0;
+    const days = new Set<number>();
+    for (const entry of entries) {
+      days.add(localDayStart(entry.timestamp));
+    }
+    let cursor = localDayStart(now);
+    if (!days.has(cursor)) {
+      cursor = localDayStart(now, -1);
+      if (!days.has(cursor)) return 0;
+    }
+    let streak = 0;
+    while (days.has(cursor)) {
+      streak++;
+      cursor = localDayStart(cursor, -1);
+    }
+    return streak;
+  }
+
   counterSettings(matterId: string): CounterConfig {
-    return this.readConfig<CounterConfig>(matterId, ModuleType.Counter, { mode: 'fixed' });
+    if (this.isLegacyEventOnly(matterId)) {
+      return { mode: 'tally', unit: '次', initialValue: 0, fixedSteps: [1] };
+    }
+    return this.readConfig<CounterConfig>(matterId, ModuleType.Counter, { mode: 'tally', unit: '次', fixedSteps: [1] });
+  }
+
+  activeCounterMode(matterId: string): ActiveCounterMode {
+    const cfg = this.counterSettings(matterId);
+    if (cfg.mode === 'tally' || cfg.mode === 'amount' || cfg.mode === 'daily_once') {
+      return cfg.mode;
+    }
+    return 'amount';
+  }
+
+  counterUnit(matterId: string): string {
+    const cfg = this.counterSettings(matterId);
+    const trimmed = cfg.unit?.trim() ?? '';
+    if (trimmed.length > 0) return trimmed;
+    const mode = this.activeCounterMode(matterId);
+    if (mode === 'tally') return '次';
+    if (mode === 'daily_once') return '天';
+    return '';
+  }
+
+  counterQuickSteps(matterId: string): number[] {
+    const mode = this.activeCounterMode(matterId);
+    if (mode !== 'amount') return [1];
+    const steps = (this.counterSettings(matterId).fixedSteps ?? [])
+      .filter((v: number) => Number.isFinite(v) && v > 0);
+    return steps.length > 0 ? steps : [1, 10];
   }
 
   counterStep(matterId: string): number {
-    return this.counterSettings(matterId).fixedSteps?.[0] ?? 1;
+    return this.counterQuickSteps(matterId)[0] ?? 1;
   }
 
   counterTotal(matterId: string): number {
-    return this.state.counterEntries
-      .filter((entry: CounterEntry) => entry.matterId === matterId)
-      .reduce((total: number, entry: CounterEntry) => total + entry.value, this.counterSettings(matterId).initialValue ?? 0);
+    const initial = this.counterSettings(matterId).initialValue ?? 0;
+    return this.rawEntriesForCounter(matterId)
+      .reduce((total: number, entry: CounterEntry) => total + entry.value, initial);
   }
 
   counterToday(matterId: string): number {
-    return this.state.counterEntries
-      .filter((entry: CounterEntry) => entry.matterId === matterId && isToday(entry.timestamp))
+    return this.rawEntriesForCounter(matterId)
+      .filter((entry: CounterEntry) => isToday(entry.timestamp))
       .reduce((total: number, entry: CounterEntry) => total + entry.value, 0);
   }
 
   // Retained for compatibility with data created before the progress module was removed.
-
   getProgressPercent(matterId: string): number {
     const fallback: ProgressConfig = {
       mode: 'manual_percent',
@@ -377,32 +651,42 @@ export class MatterState {
       timestamp,
       mode,
       hasTime: mode === 'deadline' && hasTime,
-      location: location.trim()
+      location: location.trim() || undefined
     };
     this.writeConfig(matterId, ModuleType.Deadline, config);
-    if (!this.moduleFor(matterId, ModuleType.Countdown)) {
-      const matter = this.findMatter(matterId);
-      matter?.enabledModules.push(createModuleInstance(matterId, ModuleType.Countdown));
-    }
   }
 
   countdownText(matterId: string): string {
     const deadline = this.getDeadline(matterId);
     if (!deadline) {
-      return '未设置截止日期';
+      return '未设置时间';
     }
     return dateSummary(deadline);
   }
 
-  getNote(matterId: string): string {
-    const config = this.readConfig<NoteConfig>(matterId, ModuleType.Note, { text: '' });
-    return config.text ?? '';
+  getNoteConfig(matterId: string): NoteConfig {
+    const matter = this.findMatter(matterId);
+    if (!matter) return { text: '' };
+    return effectiveMatterNote(matter);
   }
 
-  setNote(matterId: string, text: string): void {
+  getNote(matterId: string): string {
+    return this.getNoteConfig(matterId).text;
+  }
+
+  getAttachments(matterId: string): TimelineAttachment[] {
+    return copyTimelineAttachments(this.getNoteConfig(matterId).attachments) ?? [];
+  }
+
+  setNote(matterId: string, text: string, attachments?: TimelineAttachment[]): void {
+    const matter = this.findMatter(matterId);
+    if (!matter) return;
+    const prev = this.readConfig<NoteConfig>(matterId, ModuleType.Note, { text: '' });
     const config: NoteConfig = {
-      text
+      text,
+      attachments: attachments !== undefined ? copyTimelineAttachments(attachments) : copyTimelineAttachments(prev.attachments)
     };
+    matter.description = undefined;
     this.writeConfig(matterId, ModuleType.Note, config);
   }
 
@@ -519,54 +803,91 @@ export class MatterState {
   }
 
   moduleSummary(matter: Matter): string {
-    const visibleModules = matter.enabledModules.filter((module: ModuleInstance) => {
-      return module.moduleType !== ModuleType.Countdown && module.moduleType !== ModuleType.Progress;
-    });
-    const parts: string[] = visibleModules.slice(0, 3).map((module: ModuleInstance) => {
+    const seen = new Set<string>();
+    const labels: string[] = [];
+    for (const module of matter.enabledModules) {
+      if (module.moduleType === ModuleType.Countdown || module.moduleType === ModuleType.Progress) continue;
+      let label = moduleLabel(module.moduleType);
       if (module.moduleType === ModuleType.Deadline) {
-        return dateModeLabel(this.getDeadline(matter.id)?.mode ?? 'deadline');
+        label = timeConfigTitle(this.getDeadline(matter.id));
+      } else if (module.moduleType === ModuleType.Tag) {
+        const tag = this.matterTag(matter);
+        label = tag ? tag.name : '标签';
+      } else if (module.moduleType === ModuleType.Counter || module.moduleType === ModuleType.EventRecord) {
+        const mode = this.activeCounterMode(matter.id);
+        label = mode === 'tally' ? '计次' : mode === 'daily_once' ? '每日打卡' : '计数';
       }
-      return moduleLabel(module.moduleType);
-    });
-    if (visibleModules.length > 3) {
-      parts.push(`等 ${visibleModules.length} 项信息`);
+      if (!seen.has(label)) {
+        seen.add(label);
+        labels.push(label);
+      }
     }
-    return parts.length > 0 ? parts.join(' · ') : '未启用信息';
+    if (labels.length > 3) {
+      return labels.slice(0, 3).concat(`等 ${labels.length} 项`).join(' · ');
+    }
+    return labels.length > 0 ? labels.join(' · ') : '未启用信息';
+  }
+
+  counterSummaryText(matterId: string): string {
+    const mode = this.activeCounterMode(matterId);
+    const unit = this.counterUnit(matterId);
+    if (mode === 'daily_once') {
+      const done = this.isDailyDoneToday(matterId);
+      const streak = this.counterStreakDays(matterId);
+      const total = this.counterTotal(matterId);
+      return `${done ? '今日已打卡' : '今日未打卡'} · 连续 ${streak} 天（共 ${total} 天）`;
+    }
+    if (mode === 'tally') {
+      return `今日 ${this.counterToday(matterId)} ${unit} · 累计 ${this.counterTotal(matterId)} ${unit}`;
+    }
+    const suffix = unit ? ` ${unit}` : '';
+    return `今日 ${this.counterToday(matterId)}${suffix}，累计 ${this.counterTotal(matterId)}${suffix}`;
   }
 
   cardPrimaryText(matter: Matter): string {
-    if (this.hasModule(matter, ModuleType.EventRecord)) {
-      return `今日 ${this.todayEventCount(matter.id)} 次`;
-    }
-    if (this.hasModule(matter, ModuleType.Counter)) {
-      return `今日 ${this.counterToday(matter.id)}，累计 ${this.counterTotal(matter.id)}`;
+    if (this.hasModule(matter, ModuleType.Counter) || this.hasModule(matter, ModuleType.EventRecord)) {
+      return this.counterSummaryText(matter.id);
     }
     if (this.hasModule(matter, ModuleType.Checklist)) {
       return this.listSummaryText(matter.id);
     }
-    if (this.hasModule(matter, ModuleType.Countdown)) {
+    if (this.hasModule(matter, ModuleType.Deadline) || this.hasModule(matter, ModuleType.Countdown)) {
       return this.countdownText(matter.id);
+    }
+    const note = this.getNote(matter.id).trim();
+    if (note.length > 0) {
+      return note.split('\n')[0];
     }
     return this.moduleSummary(matter);
   }
 
   cardQuickActionType(matter: Matter): string {
+    if (this.hasModule(matter, ModuleType.Counter)) {
+      const mode = this.activeCounterMode(matter.id);
+      if (mode === 'daily_once') {
+        return this.isDailyDoneToday(matter.id) ? 'open' : 'counter:1';
+      }
+      return 'counter:' + this.counterStep(matter.id);
+    }
     if (this.hasModule(matter, ModuleType.EventRecord)) {
       return 'record';
-    }
-    if (this.hasModule(matter, ModuleType.Counter)) {
-      return 'counter:' + this.counterStep(matter.id);
     }
     return 'open';
   }
 
   cardQuickActionLabel(matter: Matter): string {
-    const action = this.cardQuickActionType(matter);
-    if (action === 'record') {
-      return '记录';
-    }
-    if (action.startsWith('counter:')) {
+    if (this.hasModule(matter, ModuleType.Counter)) {
+      const mode = this.activeCounterMode(matter.id);
+      if (mode === 'daily_once') {
+        return this.isDailyDoneToday(matter.id) ? '已完成' : '打卡';
+      }
+      if (mode === 'tally') {
+        return '记一次';
+      }
       return '+' + this.counterStep(matter.id);
+    }
+    if (this.hasModule(matter, ModuleType.EventRecord)) {
+      return '记一次';
     }
     return '打开';
   }
@@ -576,7 +897,7 @@ export class MatterState {
     if (matter && !matter.archived) {
       return matter.id;
     }
-    const first = this.activeMatters()[0];
+    const first = this.residentActiveMatters()[0] ?? this.activeMatters()[0];
     return first ? first.id : '';
   }
 
@@ -649,6 +970,7 @@ export class MatterState {
     const seed = createSeedState();
     this.state.matters = seed.matters;
     this.state.clusters = seed.clusters;
+    this.state.tags = seed.tags;
     this.state.eventRecords = seed.eventRecords;
     this.state.counterEntries = seed.counterEntries;
     this.state.checklistItems = seed.checklistItems;

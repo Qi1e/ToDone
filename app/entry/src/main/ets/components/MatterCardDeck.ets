@@ -1,4 +1,6 @@
 import { matterErrorMessage } from '../domain/MatterSnapshot';
+import { dayOccurrenceStartForMatter } from '../domain/MatterSchedule';
+import { timelineDayHeading } from '../domain/TimelineLayout';
 import { unifiedDataChannel } from '@kit.ArkData';
 import { AnimatorResult, LengthMetrics, router } from '@kit.ArkUI';
 import { MatterServices } from '../application/MatterServices';
@@ -26,9 +28,14 @@ const MATTER_DRAG_TYPE: string = 'ApplicationDefined.ToDoneMatter';
 export struct MatterCardDeck {
   @Prop @Watch('returnToDeck') revision: number = 0;
   @Prop @Watch('searchChanged') searchOpen: boolean = false;
+  @Prop @Watch('filterArgsChanged') filterActive: boolean = false;
+  @Prop @Watch('filterArgsChanged') selectedDay: number = 0;
+  @Prop @Watch('filterArgsChanged') today: number = 0;
   @Prop @Watch('resizeDeck') pageHeight: number = 0;
   @Prop @Watch('returnToFront') homeRequest: number = 0;
   onBrowseChange: (awayFromFront: boolean) => void = () => {};
+  onClearDateFilter: () => void = () => {};
+  onFilterToday: () => void = () => {};
   @State private cards: Matter[] = [];
   @State private searchText: string = '';
   @State private searchFocused: boolean = false;
@@ -74,8 +81,20 @@ export struct MatterCardDeck {
     }
   }
 
+  private filterArgsChanged(): void {
+    this.refresh();
+  }
+
   private refresh(preserveIndex: boolean = false): void {
-    this.matters = this.showArchived ? this.service.archivedMatters() : this.service.activeMatters();
+    if (this.showArchived) {
+      this.matters = this.service.archivedMatters();
+    } else if (this.searchText.trim().length > 0) {
+      this.matters = this.service.activeMatters();
+    } else if (this.filterActive && this.selectedDay > 0) {
+      this.matters = this.service.mattersForDay(this.selectedDay);
+    } else {
+      this.matters = this.service.residentActiveMatters();
+    }
     this.filterMatters(preserveIndex);
   }
 
@@ -91,8 +110,15 @@ export struct MatterCardDeck {
     const index = this.at.index;
     const id = this.cards[index]?.id;
     const keyword = this.searchText.trim();
-    const filtered = keyword.length === 0 ? this.matters : this.matters.filter((matter: Matter) =>
-      matter.title.includes(keyword) || (matter.description ?? '').includes(keyword) || this.store.getNote(matter.id).includes(keyword));
+    const basePool = keyword.length > 0
+      ? (this.showArchived ? this.service.archivedMatters() : this.service.activeMatters())
+      : this.matters;
+    const filtered = keyword.length === 0 ? basePool : basePool.filter((matter: Matter) => {
+      const tagName = this.store.matterTag(matter)?.name ?? '';
+      return matter.title.includes(keyword) ||
+        tagName.includes(keyword) ||
+        this.store.getNote(matter.id).includes(keyword);
+    });
     this.stopAnimation();
     this.panning = false;
     const fallback = Math.max(0, Math.min(index, filtered.length - 1));
@@ -219,7 +245,24 @@ export struct MatterCardDeck {
 
   private openMatter(matter: Matter): void {
     if (this.suppressTap || MatterServices.isPreview()) return;
-    router.pushUrl({ url: 'pages/MatterDetail', params: { matterId: matter.id } });
+    const occStart = this.filterActive
+      ? dayOccurrenceStartForMatter(this.store.readState(), matter.id, this.selectedDay)
+      : undefined;
+    router.pushUrl({
+      url: 'pages/MatterDetail',
+      params: { matterId: matter.id, occurrenceStart: occStart }
+    });
+  }
+
+  private editMatterDirect(matter: Matter): void {
+    if (this.suppressTap || MatterServices.isPreview()) return;
+    const occStart = this.filterActive
+      ? dayOccurrenceStartForMatter(this.store.readState(), matter.id, this.selectedDay)
+      : undefined;
+    router.pushUrl({
+      url: 'pages/CreateMatter',
+      params: { matterId: matter.id, occurrenceStart: occStart }
+    });
   }
 
   private async perform(write: () => Promise<void>): Promise<void> {
@@ -343,16 +386,97 @@ export struct MatterCardDeck {
     };
   }
 
+  @Builder
+  private FilterStatusBar() {
+    Row({ space: Space.xs }) {
+      if (this.filterActive) {
+        Text(`${timelineDayHeading(this.selectedDay, this.today)} · ${this.cards.length} 项`)
+          .fontSize(TypeSize.meta)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink)
+          .fontFeature(TABULAR_NUMS)
+          .layoutWeight(1);
+        Button('× 返回全部', { type: ButtonType.Normal })
+          .height(28)
+          .padding({ left: Space.sm, right: Space.sm })
+          .fontSize(TypeSize.meta)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink)
+          .backgroundColor(Colors.wash)
+          .borderRadius(Radius.chip)
+          .onClick(() => this.onClearDateFilter());
+      } else {
+        Text(`全部常驻 · ${this.cards.length}`)
+          .fontSize(TypeSize.meta)
+          .fontWeight(TypeWeight.regular)
+          .fontColor(Colors.inkMuted)
+          .fontFeature(TABULAR_NUMS)
+          .layoutWeight(1);
+        if (this.store.todayLightScheduleCount(this.today) > 0) {
+          Button(`今日 ${this.store.todayLightScheduleCount(this.today)} 项日程 · 查看 ›`, { type: ButtonType.Normal })
+            .height(28)
+            .padding({ left: Space.sm, right: Space.sm })
+            .fontSize(TypeSize.meta)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink)
+            .backgroundColor(Colors.wash)
+            .borderRadius(Radius.chip)
+            .fontFeature(TABULAR_NUMS)
+            .onClick(() => this.onFilterToday());
+        } else {
+          Button('点日期查看当日日程', { type: ButtonType.Normal })
+            .height(28)
+            .padding({ left: Space.xs, right: Space.xs })
+            .fontSize(TypeSize.meta)
+            .fontWeight(TypeWeight.regular)
+            .fontColor(Colors.inkMuted)
+            .backgroundColor(Color.Transparent)
+            .borderRadius(Radius.chip)
+            .onClick(() => this.onFilterToday());
+        }
+      }
+    }
+    .width('100%')
+    .height(34)
+    .padding({ left: Space.page, right: Space.page })
+    .alignItems(VerticalAlign.Center);
+  }
+
   build() {
     Column() {
       if (this.searchOpen) {
         this.SearchBar()
+      } else if (!this.showArchived) {
+        this.FilterStatusBar()
       }
       Stack({ alignContent: Alignment.TopStart }) {
         if (this.cards.length === 0) {
-          Text(this.searchText.trim() ? '没有匹配的事项' : this.showArchived ? '还没有归档事项' : '还没有事项')
-            .width('100%').textAlign(TextAlign.Center).fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft)
-            .position({ x: 0, y: Math.max(0, (this.layout.viewport - DOCK_CLEARANCE) / 2 - 14) })
+          Column({ space: Space.sm }) {
+            Text(this.searchText.trim()
+              ? '没有匹配的事项'
+              : this.showArchived
+                ? '还没有归档事项'
+                : this.filterActive
+                  ? '这天暂无日程或截止事项'
+                  : '还没有常驻事项')
+              .textAlign(TextAlign.Center)
+              .fontSize(TypeSize.bodySmall)
+              .fontColor(Colors.inkSoft);
+            if (this.filterActive && !this.searchText.trim()) {
+              Button('返回全部事项', { type: ButtonType.Normal })
+                .constraintSize({ minHeight: 36 })
+                .padding({ left: Space.md, right: Space.md })
+                .fontSize(TypeSize.bodySmall)
+                .fontWeight(TypeWeight.semibold)
+                .fontColor(Colors.ink)
+                .backgroundColor(Colors.wash)
+                .borderRadius(Radius.chip)
+                .onClick(() => this.onClearDateFilter());
+            }
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Center)
+          .position({ x: 0, y: Math.max(0, (this.layout.viewport - DOCK_CLEARANCE) / 2 - 28) })
         } else {
           Stack({ alignContent: Alignment.TopStart }) {
             ForEach(this.layout.visibleSlots(this.at), (index: number) => {
@@ -517,6 +641,23 @@ export struct MatterCardDeck {
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1);
+          if (this.store.matterTag(matter)) {
+            Row({ space: 4 }) {
+              Column()
+                .width(8)
+                .height(8)
+                .borderRadius(4)
+                .backgroundColor(this.store.matterTag(matter)?.color ?? Colors.ink);
+              Text(this.store.matterTag(matter)?.name ?? '')
+                .fontSize(TypeSize.meta)
+                .fontWeight(TypeWeight.regular)
+                .fontColor(Colors.inkSoft);
+            }
+            .padding({ left: Space.xs, right: Space.xs, top: 2, bottom: 2 })
+            .backgroundColor(Colors.wash)
+            .borderRadius(Radius.chip)
+            .alignItems(VerticalAlign.Center);
+          }
           if (matter.clusterId) {
             Row({ space: Space.xs }) {
               Column()
@@ -536,8 +677,11 @@ export struct MatterCardDeck {
         .alignItems(VerticalAlign.Center);
 
         Column({ space: Space.xs }) {
-          Text(matter.description ?? '未填写说明')
-            .fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft).maxLines(2)
+          Text(this.store.cardPrimaryText(matter))
+            .fontSize(TypeSize.bodySmall)
+            .fontColor(Colors.inkSoft)
+            .fontFeature(TABULAR_NUMS)
+            .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis });
           Text(this.dragTargetMatterId === matter.id ? '松手加入关联' : this.store.moduleSummary(matter))
             .fontSize(TypeSize.meta)
@@ -569,7 +713,7 @@ export struct MatterCardDeck {
           .borderRadius(Radius.card)
           .margin({ right: Space.xs })
           .onClick(() => this.openMatter(matter));
-        Button('上移')
+        Button('编辑')
           .type(ButtonType.Normal)
           .fontSize(TypeSize.body)
           .fontWeight(TypeWeight.regular)
@@ -579,18 +723,31 @@ export struct MatterCardDeck {
           .backgroundColor(Color.Transparent)
           .borderRadius(Radius.card)
           .margin({ right: Space.xs })
-          .onClick(() => this.moveMatter(matter.id, -1));
-        Button('下移')
-          .type(ButtonType.Normal)
-          .fontSize(TypeSize.body)
-          .fontWeight(TypeWeight.regular)
-          .constraintSize({ minHeight: 40 })
-          .padding({ left: Space.sm, right: Space.sm })
-          .fontColor(Colors.inkSoft)
-          .backgroundColor(Color.Transparent)
-          .borderRadius(Radius.card)
-          .margin({ right: Space.xs })
-          .onClick(() => this.moveMatter(matter.id, 1));
+          .onClick(() => this.editMatterDirect(matter));
+        if (!this.filterActive) {
+          Button('上移')
+            .type(ButtonType.Normal)
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.regular)
+            .constraintSize({ minHeight: 40 })
+            .padding({ left: Space.sm, right: Space.sm })
+            .fontColor(Colors.inkSoft)
+            .backgroundColor(Color.Transparent)
+            .borderRadius(Radius.card)
+            .margin({ right: Space.xs })
+            .onClick(() => this.moveMatter(matter.id, -1));
+          Button('下移')
+            .type(ButtonType.Normal)
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.regular)
+            .constraintSize({ minHeight: 40 })
+            .padding({ left: Space.sm, right: Space.sm })
+            .fontColor(Colors.inkSoft)
+            .backgroundColor(Color.Transparent)
+            .borderRadius(Radius.card)
+            .margin({ right: Space.xs })
+            .onClick(() => this.moveMatter(matter.id, 1));
+        }
         if (matter.clusterId) {
           Button('移出簇')
             .type(ButtonType.Normal)
@@ -670,6 +827,16 @@ export struct MatterCardDeck {
 
   private moduleText(module: ModuleInstance): string {
     if (module.moduleType === ModuleType.Deadline) return this.store.countdownText(module.matterId);
+    if (module.moduleType === ModuleType.Counter || module.moduleType === ModuleType.EventRecord) {
+      return this.store.counterSummaryText(module.matterId);
+    }
+    if (module.moduleType === ModuleType.Tag) {
+      const m = this.store.findMatter(module.matterId);
+      return (m ? this.store.matterTag(m)?.name : undefined) ?? '标签';
+    }
+    if (module.moduleType === ModuleType.Checklist) {
+      return `列表 ${this.store.listSummaryText(module.matterId)}`;
+    }
     const option = MODULE_OPTIONS.find((item: ModuleOption) => item.type === module.moduleType);
     return option ? option.label : '信息';
   }

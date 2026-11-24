@@ -1,28 +1,28 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
-import { timelineReadCode } from '../domain/TimelineReadError';
 import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
+import { MatterServices } from '../application/MatterServices';
+import { cleanMatterAttachmentFiles } from '../application/TimelineAttachmentFiles';
 import { TimelineReminders } from '../application/TimelineReminders';
-import { TimelineAttachmentSession, cleanTimelineAttachmentFiles } from '../application/TimelineAttachmentFiles';
-import { TimelineAttachmentList } from './TimelineAttachments';
-import { TimelineLinkedNote } from './TimelineLinkedNote';
-import { TimelineServices } from '../application/TimelineServices';
-import { TimelineBlock, TimelineDeleteScope, TimelineEditScope, TimelineRepeat, TimelineService, TimelineTag, timelineRepeatLabel, timelineReminderLabel } from '../contracts/TimelineService';
 import { formatDate, pad2 } from '../common/DateFormat';
 import { Colors, Radius, Space, TABULAR_NUMS, TypeSize, TypeWeight } from '../common/Theme';
-import { TimelineEditor } from './TimelineEditor';
+import { HomeDock, HomeGlyph, HomeIcon, HomeTab, DOCK_CLEARANCE, DOCK_MARGIN } from './HomeNavigation';
+import { MatterCardDeck } from './MatterCardDeck';
+import { TimelineAttachmentList } from './TimelineAttachments';
 import { TimelineBrowseDates } from './TimelineBrowseDates';
 import { monthStart } from './TimelineDatePicker';
 import { TimelineGrid } from './TimelineGrid';
-import { createId } from '../model/Defaults';
-import { localDayStart, timelineBlocksForDay } from '../domain/TimelineLayout';
-import { firstVisibleTimelineOccurrence } from '../domain/TimelineRecurrence';
-
-import { MatterServices } from '../application/MatterServices';
-import { MatterStore } from '../store/MatterStore';
+import { TimelineLinkedNote } from './TimelineLinkedNote';
+import {
+  TimelineBlock,
+  TimelineDeleteScope,
+  TimelineRepeat,
+  timelineReminderLabel,
+  timelineRepeatLabel,
+  TimelineTag
+} from '../contracts/TimelineService';
 import { matterErrorMessage } from '../domain/MatterSnapshot';
-import { MatterCardDeck } from './MatterCardDeck';
-import { HomeDock, HomeGlyph, HomeIcon, HomeTab, DOCK_CLEARANCE, DOCK_MARGIN } from './HomeNavigation';
+import { localDayStart, timelineBlocksForDay } from '../domain/TimelineLayout';
+import { MatterStore } from '../store/MatterStore';
 
 interface HomeCalendarRoute {
   day?: number;
@@ -40,12 +40,10 @@ export struct HomeScreen {
   registerBack: (handler: () => boolean) => void = () => {};
   @State private tab: HomeTab = HomeTab.Cards;
   @State private searchOpen: boolean = false;
+  @State private dateFilterActive: boolean = false;
   @State private matterRevision: number = 0;
   @State private greeting: string = '你好';
-  private service?: TimelineService;
   private abilityContext?: common.UIAbilityContext;
-  private attachmentSession: TimelineAttachmentSession = new TimelineAttachmentSession();
-  @State private importing: boolean = false;
   @State private reminderStatus: string = '';
   private reminderRequest: number = 0;
   private pageActive: boolean = false;
@@ -60,37 +58,37 @@ export struct HomeScreen {
   @State private browseMonth: number = monthStart(Date.now());
   private midnightTimer: number = -1;
   @State blocks: TimelineBlock[] = [];
-  @State loadError: string = '';
   @State showSheet: boolean = false;
-  @State showEditor: boolean = false;
-  @State newTagPage: boolean = false;
-  @State creating: boolean = false;
-  @State initialClock: string = '';
   @State saving: boolean = false;
   @State confirmDelete: boolean = false;
-  @State confirmEdit: boolean = false;
-  private editDraft?: TimelineBlock;
   @State pendingScope: TimelineDeleteScope = TimelineDeleteScope.One;
   @State errorMessage: string = '';
   @State focusAt: number = 0;
   @State current: TimelineBlock = { id: '', title: '', startAt: 0, endAt: 0, note: '' };
+  @State private matterLoading: boolean = true;
+  @State private matterReadError: string = '';
+  private unsubscribeMatters?: () => void;
 
   aboutToAppear(): void {
     this.pageActive = true;
     this.tab = this.initialTab;
     this.registerBack(() => this.handleBack());
-    this.unsubscribeMatters = MatterStore.getInstance().subscribe(() => { this.matterRevision++; });
+    this.unsubscribeMatters = MatterStore.getInstance().subscribe(() => {
+      this.matterRevision++;
+      this.reloadScheduleFromStore();
+    });
     this.loadMatters();
     try {
-      const route = this.initialTab === HomeTab.Timeline ? router.getParams() as HomeCalendarRoute | undefined : undefined;
+      const route = this.initialTab === HomeTab.Timeline
+        ? router.getParams() as HomeCalendarRoute | undefined
+        : undefined;
       if (route && typeof route.day === 'number' && Number.isFinite(new Date(route.day).getTime())) {
-        this.selectDay(route.day);
+        this.setDayOnly(route.day);
         this.calendarRoute = route;
       }
     } catch (error) {
       // 单页预览可以没有路由栈，沿用默认日期。
     }
-    this.load();
     if (this.foreground) this.refreshToday();
   }
 
@@ -98,7 +96,6 @@ export struct HomeScreen {
     this.unsubscribeMatters?.();
     this.pageActive = false;
     this.registerBack(() => false);
-    if (!this.saving && this.tab === HomeTab.Timeline) this.finishAttachments();
     this.stopMidnightTimer();
   }
 
@@ -106,29 +103,73 @@ export struct HomeScreen {
     if (!this.pageActive) return;
     if (this.foreground) {
       this.loadMatters();
-      this.load();
       this.refreshToday();
     } else {
       this.stopMidnightTimer();
     }
   }
 
-  @State private matterLoading: boolean = true;
-  @State private matterReadError: string = '';
-  private unsubscribeMatters?: () => void;
-
   private async loadMatters(): Promise<void> {
     this.matterLoading = true;
     try {
-      await MatterServices.initialize(getContext(this) as common.UIAbilityContext);
+      if (!MatterServices.isPreview()) {
+        const context = getContext(this) as common.UIAbilityContext;
+        this.abilityContext = context;
+        await MatterServices.initialize(context);
+      }
       this.matterReadError = '';
+      this.reloadScheduleFromStore();
+      this.consumeFocusScheduleDay();
       this.matterRevision++;
       MatterServices.requestCardRefresh();
+      if (!MatterServices.isPreview() && this.abilityContext && !this.showSheet) {
+        cleanMatterAttachmentFiles(this.abilityContext, MatterStore.getInstance().allReferencedAttachments());
+        this.syncReminders();
+      }
+      this.applyPendingCalendarRoute();
     } catch (error) {
       this.matterReadError = matterErrorMessage(error as Error);
     } finally {
       this.matterLoading = false;
     }
+  }
+
+  private consumeFocusScheduleDay(): void {
+    const focusDay = AppStorage.get<number>('todone_focus_schedule_day');
+    if (typeof focusDay === 'number' && Number.isFinite(focusDay) && focusDay > 0) {
+      AppStorage.setOrCreate('todone_focus_schedule_day', 0);
+      this.setDayOnly(focusDay);
+      this.dateFilterActive = true;
+      this.tab = HomeTab.Cards;
+      setTimeout(() => {
+        if (this.pageActive) {
+          this.getUIContext().getPromptAction().showToast({
+            message: '已排入当日日程，点「× 返回全部」回到常驻清单',
+            duration: 2200,
+            bottom: DOCK_CLEARANCE
+          });
+        }
+      }, 120);
+    }
+  }
+
+  private applyPendingCalendarRoute(): void {
+    const route = this.calendarRoute;
+    this.calendarRoute = undefined;
+    if (route && route.blockId && route.originalStart !== undefined) {
+      const selected = timelineBlocksForDay(this.day, this.blocks).find((item: TimelineBlock) =>
+        item.id === route.blockId && (item.occurrenceOriginalStart ?? item.startAt) === route.originalStart);
+      if (selected) {
+        this.focusAt = Math.max(this.day, selected.startAt);
+        this.selectBlock(selected);
+      }
+    }
+  }
+
+  private reloadScheduleFromStore(): void {
+    const store = MatterStore.getInstance();
+    this.blocks = store.timelineBlocks();
+    this.tags = store.listTags();
   }
 
   private handleBack(): boolean {
@@ -139,6 +180,8 @@ export struct HomeScreen {
       this.calendarLevel--;
     } else if (this.tab === HomeTab.Cards && this.searchOpen) {
       this.searchOpen = false;
+    } else if (this.tab === HomeTab.Cards && this.dateFilterActive) {
+      this.dateFilterActive = false;
     } else if (this.tab === HomeTab.Cards && this.deckAwayFromFront) {
       this.deckHomeRequest++;
     } else if (this.tab === HomeTab.Timeline && this.initialTab === HomeTab.Cards) {
@@ -158,7 +201,7 @@ export struct HomeScreen {
     this.stopMidnightTimer();
     const now = Date.now();
     const today = localDayStart(now);
-    if (today !== this.today && this.day === this.today) this.selectDay(today);
+    if (today !== this.today && this.day === this.today) this.setDayOnly(today);
     this.today = today;
     const hour = new Date(now).getHours();
     this.greeting = hour < 11 ? '早上好' : hour < 14 ? '中午好' : hour < 18 ? '下午好' : '晚上好';
@@ -166,110 +209,61 @@ export struct HomeScreen {
     this.midnightTimer = setTimeout(() => this.refreshToday(), localDayStart(now, 1) - now);
   }
 
-  private load(): void {
-    if (MatterServices.isPreview()) return;
-    let stage = 'CONTEXT';
-    try {
-      const context = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
-      if (!context) throw new Error('UIAbility context unavailable');
-      this.abilityContext = context;
-      stage = 'INIT';
-      this.service = TimelineServices.get(context);
-      stage = 'LIST';
-      this.reloadSchedule();
-      this.loadError = '';
-    } catch (error) {
-      this.loadError = timelineReadCode(error as Error, stage);
-      hilog.error(0x0000, 'ToDone', 'Timeline load failed: %{public}s', this.loadError);
-      return;
-    }
-    if (this.tab === HomeTab.Timeline && !this.showSheet && this.abilityContext) cleanTimelineAttachmentFiles(this.abilityContext, this.blocks);
-    const route = this.calendarRoute;
-    this.calendarRoute = undefined;
-    if (route && route.blockId && route.originalStart !== undefined) {
-      const selected = timelineBlocksForDay(this.day, this.blocks).find((item: TimelineBlock) =>
-        item.id === route.blockId && (item.occurrenceOriginalStart ?? item.startAt) === route.originalStart);
-      if (selected) {
-        this.focusAt = Math.max(this.day, selected.startAt);
-        this.selectBlock(selected);
-      }
-    }
-  }
-
-  private finishAttachments(): void {
-    this.importing = false;
-    if (!this.abilityContext || !this.service || this.loadError) return;
-    try {
-      this.attachmentSession.finish(this.abilityContext, this.service.list());
-    } catch (error) {
-      console.warn('日程暂时无法读取，附件留待重开时间线时清理');
-    }
-  }
-
   private async syncReminders(askPermission: boolean = false): Promise<void> {
-    if (!this.abilityContext || !this.service || this.loadError) return;
+    if (!this.abilityContext || this.matterReadError) return;
     const request = ++this.reminderRequest;
     let status: string;
     try {
-      status = await TimelineReminders.sync(this.abilityContext, this.service.list(), askPermission);
+      status = await TimelineReminders.sync(
+        this.abilityContext,
+        MatterStore.getInstance().reminderBlocks(),
+        askPermission
+      );
     } catch (error) {
-      status = '日程已保留，系统提醒未能同步。';
+      status = '事项已保留，系统提醒未能同步。';
     }
     if (request === this.reminderRequest && this.pageActive) this.reminderStatus = status;
   }
 
-  private reloadSchedule(): void {
-    if (!this.service) return;
-    this.blocks = this.service.list();
-    this.tags = this.service.listTags();
-  }
-
-  private async saveTag(tag: TimelineTag): Promise<void> {
-    if (this.saving || !this.service) throw new Error('暂时无法保存标签，请重试');
-    this.saving = true;
-    try {
-      await this.service.saveTag(tag);
-      if (this.pageActive) this.tags = this.service.listTags();
-    } finally {
-      if (this.pageActive) this.saving = false;
-      else this.finishAttachments();
-    }
-  }
-
-  private selectDay(value: number): void {
+  private setDayOnly(value: number): void {
     this.focusAt = 0;
     this.day = localDayStart(value);
     this.browseMonth = monthStart(value);
   }
 
-  private createBlock(): void {
-    if (this.loadError || this.saving) return;
-    this.attachmentSession = new TimelineAttachmentSession();
-    this.editDraft = undefined;
-    this.confirmEdit = false;
-    const start = new Date(this.day);
-    start.setHours(formatDate(this.day) === formatDate(Date.now()) ?
-      Math.min(new Date().getHours() + 1, 23) : 9, 0, 0, 0);
-    let id = createId('time');
-    while (this.blocks.some((block: TimelineBlock) => block.id === id)) {
-      id = createId('time');
+  private handleCalendarPickDay(value: number): void {
+    const picked = localDayStart(value);
+    if (this.tab === HomeTab.Cards) {
+      // 在主页点击已处于筛选态的同一天，取消日期筛选回到全部常驻
+      if (this.dateFilterActive && picked === this.day && this.calendarLevel === 0) {
+        this.dateFilterActive = false;
+        return;
+      }
+      this.setDayOnly(picked);
+      this.dateFilterActive = true;
+      if (this.calendarLevel > 0) this.calendarLevel = 0;
+      return;
     }
-    this.current = { id: id, title: '', startAt: start.getTime(), endAt: start.getTime() + 3600000, note: '' };
-    this.initialClock = '';
-    this.newTagPage = false;
-    this.creating = true;
-    this.showEditor = true;
-    this.errorMessage = '';
-    this.confirmDelete = false;
-    this.showSheet = true;
+    this.setDayOnly(picked);
+  }
+
+  private openUnifiedCreate(): void {
+    if (MatterServices.isPreview()) return;
+    if (this.tab === HomeTab.Timeline) {
+      router.pushUrl({
+        url: 'pages/CreateMatter',
+        params: { fromTimeline: true, presetDay: this.day }
+      });
+    } else {
+      router.pushUrl({
+        url: 'pages/CreateMatter',
+        params: this.dateFilterActive ? { presetDay: this.day } : {}
+      });
+    }
   }
 
   private selectBlock(block: TimelineBlock): void {
-    this.editDraft = undefined;
-    this.confirmEdit = false;
     this.current = block;
-    this.creating = false;
-    this.showEditor = false;
     this.confirmDelete = false;
     this.errorMessage = '';
     this.showSheet = true;
@@ -279,88 +273,24 @@ export struct HomeScreen {
     return this.current.repeat !== undefined && this.current.repeat !== TimelineRepeat.None;
   }
 
-  private editBlock(clock: string): void {
-    this.attachmentSession = new TimelineAttachmentSession();
-    this.editDraft = undefined;
-    this.confirmEdit = false;
-    this.initialClock = clock;
-    this.newTagPage = false;
-    this.errorMessage = '';
-    this.confirmDelete = false;
-    this.showEditor = true;
+  private editCurrentInUnifiedPage(clock: string = ''): void {
+    const id = this.current.id;
+    const occ = this.isSeries() ? (this.current.occurrenceOriginalStart ?? this.current.startAt) : undefined;
+    this.showSheet = false;
+    router.pushUrl({
+      url: 'pages/CreateMatter',
+      params: { matterId: id, occurrenceStart: occ, focusClock: clock }
+    });
   }
 
-  private requestSave(value: TimelineBlock): void {
-    if (!this.creating && this.isSeries()) {
-      this.editDraft = value;
-      this.initialClock = '';
-      this.confirmEdit = true;
-      this.pendingScope = this.newRepeatPattern() ? TimelineDeleteScope.Following : TimelineDeleteScope.One;
-      this.errorMessage = '';
-      return;
-    }
-    this.saveBlock(value);
-  }
-
-  private newRepeatPattern(): boolean {
-    const repeat = this.editDraft?.repeat ?? TimelineRepeat.None;
-    return repeat !== this.current.repeat;
-  }
-
-  private editStopsRepeat(): boolean {
-    return (this.editDraft?.repeat ?? TimelineRepeat.None) === TimelineRepeat.None;
-  }
-
-  private cancelScope(): void {
-    if (this.saving) return;
-    this.confirmEdit = false;
-    this.confirmDelete = false;
-    this.errorMessage = '';
-  }
-
-  private applyScope(): void {
-    if (this.confirmEdit && this.editDraft) {
-      let scope = TimelineEditScope.One;
-      if (this.pendingScope === TimelineDeleteScope.Following) scope = TimelineEditScope.Following;
-      if (this.pendingScope === TimelineDeleteScope.All) scope = TimelineEditScope.All;
-      this.saveBlock(this.editDraft, scope);
-    } else if (this.confirmDelete) {
-      this.deleteBlock();
-    }
-  }
-
-  private async saveBlock(value: TimelineBlock, scope?: TimelineEditScope): Promise<void> {
-    if (this.saving || !this.service) return;
-    this.saving = true;
-    this.errorMessage = '';
-    try {
-      let focus: TimelineBlock | undefined;
-      if (scope !== undefined) {
-        focus = await this.service.saveOccurrence(value, scope, this.current.occurrenceOriginalStart ?? this.current.startAt);
-      } else {
-        await this.service.save(value, !this.creating);
-        const stored = this.service.list().find((block: TimelineBlock) => block.id === value.id);
-        if (stored) focus = firstVisibleTimelineOccurrence(stored);
-      }
-      const enableNotifications = value.reminderMinutes !== undefined &&
-        (this.creating || value.reminderMinutes !== this.current.reminderMinutes);
-      this.syncReminders(enableNotifications);
-      this.finishAttachments();
-      if (!this.pageActive) return;
-      this.reloadSchedule();
-      if (focus) {
-        this.selectDay(focus.startAt);
-        this.focusAt = focus.startAt;
-      }
-      this.showSheet = false;
-      this.confirmEdit = false;
-      this.editDraft = undefined;
-    } catch (error) {
-      if (this.pageActive) this.errorMessage = '保存失败，草稿已保留，可再次保存。';
-    } finally {
-      if (this.pageActive) this.saving = false;
-      else this.finishAttachments();
-    }
+  private openCurrentMatterDetail(): void {
+    const id = this.current.id;
+    const occ = this.isSeries() ? (this.current.occurrenceOriginalStart ?? this.current.startAt) : undefined;
+    this.showSheet = false;
+    router.pushUrl({
+      url: 'pages/MatterDetail',
+      params: { matterId: id, occurrenceStart: occ }
+    });
   }
 
   private startDelete(): void {
@@ -370,16 +300,21 @@ export struct HomeScreen {
   }
 
   private async deleteBlock(): Promise<void> {
-    if (this.saving || !this.service) return;
+    if (this.saving) return;
     this.saving = true;
     this.errorMessage = '';
     try {
       const scope = this.isSeries() ? this.pendingScope : TimelineDeleteScope.All;
-      await this.service.remove(this.current.id, scope, this.current.occurrenceOriginalStart ?? this.current.startAt);
+      const occ = this.current.occurrenceOriginalStart ?? this.current.startAt;
+      await MatterStore.getInstance().deleteScheduleOccurrence(this.current.id, scope, occ);
+      if (this.abilityContext) {
+        cleanMatterAttachmentFiles(this.abilityContext, MatterStore.getInstance().allReferencedAttachments());
+      }
       this.syncReminders();
-      this.finishAttachments();
+      MatterServices.requestCardRefresh();
       if (!this.pageActive) return;
-      this.reloadSchedule();
+      this.reloadScheduleFromStore();
+      this.confirmDelete = false;
       this.showSheet = false;
     } catch (error) {
       if (this.pageActive) this.errorMessage = '删除失败，请重试。';
@@ -388,26 +323,14 @@ export struct HomeScreen {
     }
   }
 
+  private isScopeDeleteSheet(): boolean {
+    return this.confirmDelete && this.isSeries();
+  }
+
   @Builder
   private BlockSheet() {
-    if (this.isScopeSheet()) {
-      this.ScopeSheet()
-    } else if (this.showEditor) {
-      TimelineEditor({
-        attachmentSession: this.attachmentSession, onAttachmentBusy: (busy: boolean) => { this.importing = busy; },
-        initial: this.editDraft ?? this.current, editing: !this.creating, seriesEdit: !this.creating && this.isSeries(),
-        initialClock: this.initialClock, newTagPage: $newTagPage,
-        tags: this.tags, blocks: this.blocks, onSaveTag: (tag: TimelineTag) => this.saveTag(tag),
-        saving: this.saving, errorMessage: this.errorMessage,
-        onSave: (value: TimelineBlock) => this.requestSave(value),
-        onCancel: () => {
-          this.finishAttachments();
-          this.editDraft = undefined;
-          if (this.creating) this.showSheet = false;
-          else this.showEditor = false;
-          this.errorMessage = '';
-        }
-      })
+    if (this.isScopeDeleteSheet()) {
+      this.ScopeDeleteSheet()
     } else {
       this.BlockDetails()
     }
@@ -440,7 +363,7 @@ export struct HomeScreen {
     .padding({ top: Space.xs, bottom: Space.xs }).borderRadius(Radius.card)
     .backgroundColor(Color.Transparent)
     .accessibilityText('调整' + label + '时间，' + this.dateLabel(stamp) + ' ' + this.clockLabel(stamp))
-    .onClick(() => this.editBlock(endpoint))
+    .onClick(() => this.editCurrentInUnifiedPage(endpoint))
   }
 
   @Builder
@@ -449,10 +372,6 @@ export struct HomeScreen {
       Row().width(8).height(8).borderRadius(4).backgroundColor(tag.color)
       Text(tag.name).fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft)
     }
-  }
-
-  private isScopeSheet(): boolean {
-    return this.confirmEdit || (this.confirmDelete && this.isSeries());
   }
 
   @Builder
@@ -472,27 +391,22 @@ export struct HomeScreen {
     .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
     .backgroundColor(this.pendingScope === scope ? Colors.wash : Color.Transparent)
     .borderRadius(Radius.card)
-    .accessibilityText(label + (this.pendingScope === scope ? '，已选中' : ''))
     .onClick(() => { this.pendingScope = scope; this.errorMessage = ''; })
   }
 
   @Builder
-  private ScopeSheet() {
+  private ScopeDeleteSheet() {
     Scroll() {
       Column() {
-        Text(this.confirmEdit ? '修改重复日程' : '删除重复日程')
+        Text('删除重复事项日程')
           .width('100%').fontSize(TypeSize.heading).fontWeight(TypeWeight.semibold).fontColor(Colors.ink)
         Text(this.current.title + ' · ' + this.dateLabel(this.current.startAt) + ' ' + this.clockLabel(this.current.startAt))
           .width('100%').maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
           .margin({ top: Space.xs, bottom: Space.md }).fontSize(TypeSize.bodySmall)
           .fontColor(Colors.inkSoft).fontFeature(TABULAR_NUMS)
-        if (!this.confirmEdit || !this.newRepeatPattern()) {
-          this.ScopeOption(TimelineDeleteScope.One, this.confirmEdit ? '仅修改这一次' : '仅删除这一次')
-        }
-        this.ScopeOption(TimelineDeleteScope.Following, this.confirmEdit ?
-          (this.editStopsRepeat() ? '保留这一次，停止以后的重复' : '修改这次及以后') : '删除这次及以后')
-        this.ScopeOption(TimelineDeleteScope.All, this.confirmEdit ?
-          (this.editStopsRepeat() ? '整个系列改为仅保留这一次' : '修改整个系列') : '删除整个系列')
+        this.ScopeOption(TimelineDeleteScope.One, '仅删除这一次')
+        this.ScopeOption(TimelineDeleteScope.Following, '删除这次及以后')
+        this.ScopeOption(TimelineDeleteScope.All, '删除整个事项系列')
         if (this.errorMessage.length > 0) {
           Text(this.errorMessage).width('100%').fontSize(TypeSize.meta)
             .fontWeight(TypeWeight.semibold).fontColor(Colors.red).margin({ top: Space.sm })
@@ -502,14 +416,14 @@ export struct HomeScreen {
             .backgroundColor(Color.Transparent).fontSize(TypeSize.body)
             .fontWeight(TypeWeight.regular).fontColor(Colors.inkSoft).borderRadius(Radius.card)
             .padding({ left: Space.md, right: Space.md })
-            .onClick(() => this.cancelScope())
+            .onClick(() => { this.confirmDelete = false; this.errorMessage = ''; })
           Blank()
-          Button(this.confirmEdit ? (this.saving ? '保存中' : '保存修改') : (this.saving ? '删除中' : '确认删除'))
+          Button(this.saving ? '删除中' : '确认删除')
             .type(ButtonType.Normal).constraintSize({ minHeight: 40 })
             .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
             .backgroundColor(Colors.red).fontColor(Colors.onRed).borderRadius(Radius.card)
             .padding({ left: Space.lg, right: Space.lg })
-            .onClick(() => this.applyScope())
+            .onClick(() => { this.deleteBlock(); })
         }.width('100%').constraintSize({ minHeight: 44 }).margin({ top: Space.md })
       }.width('100%').alignItems(HorizontalAlign.Start)
       .padding({ left: Space.page, right: Space.page, top: Space.section, bottom: Space.lg })
@@ -519,15 +433,20 @@ export struct HomeScreen {
   @Builder
   private BlockDetails() {
     Column() {
-      Row() {
+      Row({ space: Space.xs }) {
         Text(this.dateLabel(this.current.startAt) + ' · 周' +
           WEEKDAYS[(new Date(this.current.startAt).getDay() + 6) % 7])
           .fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft).fontFeature(TABULAR_NUMS).layoutWeight(1)
-        Button('编辑日程').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
+        Button('详情').type(ButtonType.Normal).constraintSize({ minHeight: 40 })
+          .padding({ left: Space.sm, right: Space.sm })
+          .fontSize(TypeSize.body).fontWeight(TypeWeight.regular)
+          .fontColor(Colors.inkSoft).backgroundColor(Color.Transparent).borderRadius(Radius.card)
+          .onClick(() => this.openCurrentMatterDetail())
+        Button('编辑事项').type(ButtonType.Normal).constraintSize({ minHeight: 40 })
           .padding({ left: Space.sm, right: Space.sm })
           .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
           .fontColor(Colors.ink).backgroundColor(Color.Transparent).borderRadius(Radius.card)
-          .onClick(() => this.editBlock(''))
+          .onClick(() => this.editCurrentInUnifiedPage(''))
       }.width('100%')
       Scroll() {
         Column({ space: Space.md }) {
@@ -571,7 +490,7 @@ export struct HomeScreen {
       Divider().color(Colors.hairline)
       Row() {
         if (this.confirmDelete) {
-          Text('删除这段日程？')
+          Text('删除这个事项？')
             .fontSize(TypeSize.body).fontColor(Colors.ink).layoutWeight(1)
           Button('保留').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
             .fontSize(TypeSize.body).fontWeight(TypeWeight.regular)
@@ -584,7 +503,7 @@ export struct HomeScreen {
             .padding({ left: Space.sm, right: Space.sm })
             .onClick(() => { this.deleteBlock(); })
         } else {
-          Button('删除日程').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
+          Button('删除').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
             .padding({ left: 0, right: Space.md })
             .backgroundColor(Color.Transparent).fontColor(Colors.red)
             .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).borderRadius(Radius.card)
@@ -614,8 +533,9 @@ export struct HomeScreen {
     if (tab === HomeTab.Review || tab === this.tab || this.showSheet) return;
     this.tab = tab;
     if (tab === HomeTab.Timeline) {
-      if (!this.service || this.loadError) this.load();
-      else if (this.abilityContext) cleanTimelineAttachmentFiles(this.abilityContext, this.blocks);
+      if (this.abilityContext && !this.matterReadError) {
+        cleanMatterAttachmentFiles(this.abilityContext, MatterStore.getInstance().allReferencedAttachments());
+      }
       this.syncReminders();
     }
   }
@@ -644,17 +564,19 @@ export struct HomeScreen {
         .layoutWeight(1).fontSize(TypeSize.display).fontWeight(TypeWeight.semibold).fontColor(Colors.ink)
       if (this.tab !== HomeTab.Settings) {
         this.HeaderButton(HomeGlyph.Hint, '操作提示', () => {
-          this.getUIContext().getPromptAction().showToast({ message: this.tab === HomeTab.Cards ?
-            '点卡片标题打开事项，上下推卡片翻找。点底栏卡片图标回到开头。' : '下拉日期展开月历，点便签查看日程。' });
+          this.getUIContext().getPromptAction().showToast({
+            message: this.tab === HomeTab.Cards
+              ? '点日期筛选当日日程，点卡片打开事项，上下推卡片翻找。'
+              : '下拉日期展开月历，点便签查看或编辑事项。'
+          });
         })
         this.HeaderButton(HomeGlyph.Search, '搜索事项', () => {
           this.searchOpen = this.tab === HomeTab.Timeline || !this.searchOpen;
           this.switchTab(HomeTab.Cards);
         })
-        this.HeaderButton(HomeGlyph.Add, this.tab === HomeTab.Timeline ? '添加日程' : '新建事项', () => {
-          if (this.tab === HomeTab.Timeline) this.createBlock();
-          else router.pushUrl({ url: 'pages/CreateMatter' });
-        }, !MatterServices.isPreview() && (this.tab !== HomeTab.Timeline || (!this.loadError && !this.saving)), true)
+        this.HeaderButton(HomeGlyph.Add, '新建事项', () => {
+          this.openUnifiedCreate();
+        }, !MatterServices.isPreview() && !this.matterReadError && !this.saving, true)
       }
     }.width('100%').height(HOME_HEADER_HEIGHT).padding({ left: Space.page, right: Space.page }).backgroundColor(Colors.bg)
   }
@@ -671,29 +593,35 @@ export struct HomeScreen {
           .onClick(() => { this.syncReminders(true); })
       }.width('100%').padding({ left: Space.page, right: Space.page })
     }
-    if (this.loadError) {
+    if (this.matterReadError) {
       Column({ space: Space.sm }) {
-        Text('日程读取失败（' + this.loadError + '）').fontSize(TypeSize.bodySmall)
+        Text(this.matterReadError).fontSize(TypeSize.bodySmall)
           .fontWeight(TypeWeight.semibold).fontColor(Colors.red)
         Button('重新读取').type(ButtonType.Normal).constraintSize({ minHeight: 40 })
           .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
           .fontColor(Colors.ink).backgroundColor(Colors.wash).borderRadius(Radius.card)
           .padding({ left: Space.lg, right: Space.lg })
-          .onClick(() => { this.load(); if (!this.loadError) this.syncReminders(); })
+          .onClick(() => { this.loadMatters(); })
       }.width('100%').alignItems(HorizontalAlign.Start).padding(Space.page)
     } else {
       Column() {
-        TimelineGrid({ day: this.day, today: this.today, blocks: this.blocks, tags: this.tags, focusAt: this.focusAt,
+        TimelineGrid({
+          day: this.day,
+          today: this.today,
+          blocks: this.blocks,
+          tags: this.tags,
+          focusAt: this.focusAt,
           bottomInset: DOCK_CLEARANCE,
-          selectedId: this.showSheet && !this.creating ? this.current.id : '',
+          selectedId: this.showSheet ? this.current.id : '',
           selectedStartAt: this.current.occurrenceOriginalStart ?? this.current.startAt,
-          onSelect: (block: TimelineBlock) => this.selectBlock(block) })
+          onSelect: (block: TimelineBlock) => this.selectBlock(block)
+        })
       }.layoutWeight(1).width('100%').clip(true)
       .accessibilityLevel(this.calendarLevel === 2 ? 'no-hide-descendants' : 'auto')
       .parallelGesture(PanGesture({ direction: PanDirection.Horizontal, distance: 18 })
         .onActionEnd((event: GestureEvent) => {
           if (Math.abs(event.offsetX) >= 36 && Math.abs(event.offsetX) > Math.abs(event.offsetY) * 1.5) {
-            this.selectDay(localDayStart(this.day, event.offsetX < 0 ? 1 : -1));
+            this.setDayOnly(localDayStart(this.day, event.offsetX < 0 ? 1 : -1));
           }
         }))
     }
@@ -705,19 +633,39 @@ export struct HomeScreen {
       Stack({ alignContent: Alignment.Bottom }) {
         Column() {
           TimelineBrowseDates({
-            day: this.day, today: this.today, month: $browseMonth, level: $calendarLevel,
-            availableHeight: this.contentHeight, blocks: this.blocks, tags: this.tags,
-            showScheduleRings: this.tab === HomeTab.Timeline, readError: this.loadError,
-            onRetry: () => { this.load(); if (this.tab === HomeTab.Timeline) this.syncReminders(); },
-            onSelectDay: (day: number) => this.selectDay(day),
+            day: this.day,
+            today: this.today,
+            month: $browseMonth,
+            level: $calendarLevel,
+            availableHeight: this.contentHeight,
+            blocks: this.blocks,
+            tags: this.tags,
+            showScheduleRings: this.tab === HomeTab.Timeline,
+            showScheduleDots: this.tab === HomeTab.Cards,
+            highlightSelection: this.tab === HomeTab.Timeline || this.dateFilterActive || this.calendarLevel > 0,
+            readError: this.matterReadError,
+            onRetry: () => { this.loadMatters(); },
+            onSelectDay: (day: number) => this.handleCalendarPickDay(day),
             onSelectBlock: (block: TimelineBlock) => this.openCalendarBlock(block)
           }).visibility(this.tab === HomeTab.Settings ? Visibility.None : Visibility.Visible)
           Stack() {
-            MatterCardDeck({ searchOpen: this.searchOpen, revision: this.matterRevision, homeRequest: this.deckHomeRequest,
+            MatterCardDeck({
+              searchOpen: this.searchOpen,
+              filterActive: this.dateFilterActive,
+              selectedDay: this.day,
+              today: this.today,
+              revision: this.matterRevision,
+              homeRequest: this.deckHomeRequest,
               pageHeight: this.contentHeight + HOME_HEADER_HEIGHT,
-              onBrowseChange: (awayFromFront: boolean) => { this.deckAwayFromFront = awayFromFront; } })
-              .visibility(this.tab === HomeTab.Cards && !this.matterReadError && !this.matterLoading ?
-                Visibility.Visible : Visibility.None)
+              onBrowseChange: (awayFromFront: boolean) => { this.deckAwayFromFront = awayFromFront; },
+              onClearDateFilter: () => { this.dateFilterActive = false; },
+              onFilterToday: () => {
+                this.setDayOnly(this.today);
+                this.dateFilterActive = true;
+              }
+            })
+              .visibility(this.tab === HomeTab.Cards && !this.matterReadError && !this.matterLoading
+                ? Visibility.Visible : Visibility.None)
             if (this.tab === HomeTab.Cards && (this.matterReadError || this.matterLoading)) {
               Column({ space: Space.md }) {
                 Text(this.matterLoading ? '正在读取…' : this.matterReadError)
@@ -749,10 +697,17 @@ export struct HomeScreen {
           .accessibilityLevel(this.calendarLevel === 2 && this.tab !== HomeTab.Settings ? 'no-hide-descendants' : 'auto')
         }.width('100%').height('100%')
         if (this.calendarLevel < 2 || this.tab === HomeTab.Settings) {
-          HomeDock({ tab: this.tab, onSelect: (tab: HomeTab) => {
-            if (tab === HomeTab.Cards && tab === this.tab && !this.showSheet) this.deckHomeRequest++;
-            else this.switchTab(tab);
-          } }).margin({ bottom: DOCK_MARGIN })
+          HomeDock({
+            tab: this.tab,
+            onSelect: (tab: HomeTab) => {
+              if (tab === HomeTab.Cards && tab === this.tab && !this.showSheet) {
+                if (this.dateFilterActive) this.dateFilterActive = false;
+                this.deckHomeRequest++;
+              } else {
+                this.switchTab(tab);
+              }
+            }
+          }).margin({ bottom: DOCK_MARGIN })
         }
       }.width('100%').layoutWeight(1).clip(true)
     }.height('100%').width('100%').backgroundColor(Colors.bg)
@@ -761,16 +716,17 @@ export struct HomeScreen {
       this.contentHeight = Math.max(0, Number(size.height) - HOME_HEADER_HEIGHT);
     })
     .bindSheet($$this.showSheet, this.BlockSheet(), {
-      height: this.isScopeSheet() ? SheetSize.FIT_CONTENT : (this.showEditor ? SheetSize.LARGE : SheetSize.MEDIUM),
-      showClose: false, dragBar: !this.isScopeSheet(),
+      height: this.isScopeDeleteSheet() ? SheetSize.FIT_CONTENT : SheetSize.MEDIUM,
+      showClose: false,
+      dragBar: !this.isScopeDeleteSheet(),
       backgroundColor: Colors.card,
       maskColor: '#59191714',
       onWillDismiss: (action: DismissSheetAction) => {
-        if (!this.saving && !this.importing) {
-          if (this.isScopeSheet()) this.cancelScope();
-          else if (this.showEditor && this.newTagPage) this.newTagPage = false;
-          else {
-            this.finishAttachments();
+        if (!this.saving) {
+          if (this.isScopeDeleteSheet()) {
+            this.confirmDelete = false;
+            this.errorMessage = '';
+          } else {
             action.dismiss();
           }
         }

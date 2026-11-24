@@ -79,11 +79,16 @@ export struct TimelineDayNumber {
   @Prop muted: boolean = false;
   @Prop today: number = Date.now();
   @Prop ringFraction: number = 1;
+  @Prop showDot: boolean = false;
 
   @Prop ring: TimelineRingDay = { day: 0, count: 0, arcs: [] };
 
   private isToday(): boolean {
     return formatDate(this.day) === formatDate(this.today);
+  }
+
+  private dotColor(): string {
+    return this.ring.arcs.length > 0 ? this.ring.arcs[0].color : '#3B5F86';
   }
 
   build() {
@@ -95,9 +100,18 @@ export struct TimelineDayNumber {
         .width(CIRCLE_SIZE).height(CIRCLE_SIZE).textAlign(TextAlign.Center)
         .fontSize(TypeSize.body).fontWeight(this.isToday() || this.selected ? TypeWeight.semibold : TypeWeight.regular)
         .fontFeature(TABULAR_NUMS)
-        .fontColor(this.isToday() ? Colors.bg : this.selected ? Colors.ink : this.muted ? Colors.inkMuted : Colors.ink)
+        .fontColor(this.selected ? Colors.bg : this.isToday() ? Colors.red : this.muted ? Colors.inkMuted : Colors.ink)
         .borderRadius(CIRCLE_SIZE / 2)
-        .backgroundColor(this.isToday() ? Colors.ink : this.selected ? Colors.wash : Color.Transparent);
+        .backgroundColor(this.selected ? Colors.ink : this.isToday() ? Colors.wash : Color.Transparent);
+      if (this.showDot && this.ringFraction <= 0 && this.ring.count > 0) {
+        Row()
+          .width(4)
+          .height(4)
+          .borderRadius(2)
+          .backgroundColor(this.dotColor())
+          .position({ x: (RING_SIZE - 4) / 2, y: RING_SIZE - 4 })
+          .hitTestBehavior(HitTestMode.None);
+      }
     }.width(RING_SIZE).height(RING_SIZE);
   }
 }
@@ -114,6 +128,8 @@ export struct TimelineMonthDay {
   @Prop muted: boolean = false;
   @Prop prepareDetail: boolean = false;
   @Prop showScheduleRings: boolean = true;
+  @Prop showScheduleDots: boolean = false;
+  @Prop highlightSelection: boolean = true;
   @Prop detail: number = 0;
   @Prop rowHeight: number = ROW_HEIGHT;
   @Prop fullRowHeight: number = ROW_HEIGHT;
@@ -143,7 +159,8 @@ export struct TimelineMonthDay {
       Stack({ alignContent: Alignment.TopStart }) {
         Row() {
           TimelineDayNumber({ day: this.cell.day, today: this.today, muted: this.muted,
-            selected: formatDate(this.cell.day) === formatDate(this.day), ring: this.cell.ring,
+            selected: this.highlightSelection && formatDate(this.cell.day) === formatDate(this.day), ring: this.cell.ring,
+            showDot: this.showScheduleDots,
             ringFraction: this.showScheduleRings ? 1 - this.detail : 0 });
         }.width('100%').height(RING_SIZE).justifyContent(FlexAlign.Center).position({ x: 0, y: this.dateTop() });
         if (this.prepareDetail || this.detail > 0) {
@@ -191,6 +208,8 @@ export struct TimelineCalendarRows {
   @Prop detailedCalendar: boolean = false;
   @Prop prepareDetail: boolean = false;
   @Prop showScheduleRings: boolean = true;
+  @Prop showScheduleDots: boolean = false;
+  @Prop highlightSelection: boolean = true;
   @Prop detail: number = 0;
   @Prop fullRowHeight: number = ROW_HEIGHT;
   @Prop @Watch('refreshRows') blocks: TimelineBlock[] = [];
@@ -231,7 +250,8 @@ export struct TimelineCalendarRows {
     Row() {
       ForEach(days, (cell: HomeCalendarDay) => {
         TimelineMonthDay({ cell: cell, day: this.day, today: this.today, detail: this.detail, prepareDetail: this.prepareDetail,
-          showScheduleRings: this.showScheduleRings,
+          showScheduleRings: this.showScheduleRings, showScheduleDots: this.showScheduleDots,
+          highlightSelection: this.highlightSelection,
           rowHeight: this.rowHeight, fullRowHeight: this.fullRowHeight, muted: this.expanded && monthStart(cell.day) !== this.month,
           onPick: (day: number) => this.onPick(day) }).layoutWeight(1);
       }, (cell: HomeCalendarDay) => cell.day.toString());
