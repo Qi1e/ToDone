@@ -763,6 +763,8 @@ export struct HomeScreen {
     .bindSheet($$this.showSheet, this.BlockSheet(), {
       height: this.isScopeSheet() ? SheetSize.FIT_CONTENT : (this.showEditor ? SheetSize.LARGE : SheetSize.MEDIUM),
       showClose: false, dragBar: !this.isScopeSheet(),
+      backgroundColor: Colors.card,
+      maskColor: '#59191714',
       onWillDismiss: (action: DismissSheetAction) => {
         if (!this.saving && !this.importing) {
           if (this.isScopeSheet()) this.cancelScope();

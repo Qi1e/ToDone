@@ -43,6 +43,7 @@ struct CreateMatter {
   @State candidates: Matter[] = [];
   @State editingItemId: string = '';
   @State titleFocused: boolean = false;
+  @State confirmExit: boolean = false;
 
   aboutToAppear(): void {
     this.initialize();
@@ -136,15 +137,12 @@ struct CreateMatter {
 
   onBackPress(): boolean {
     if (this.busy) return true;
+    if (this.confirmExit) {
+      this.confirmExit = false;
+      return true;
+    }
     if (this.unavailable || this.original === JSON.stringify(this.draft)) return false;
-    AlertDialog.show({
-      message: '退出编辑？',
-      buttons: [
-        { value: '关闭', action: () => {} },
-        { value: '保留草稿', action: () => { this.leave(false); } },
-        { value: '放弃', action: () => { this.leave(true); } }
-      ]
-    });
+    this.confirmExit = true;
     return true;
   }
 
@@ -333,65 +331,154 @@ struct CreateMatter {
   }
 
   build() {
-    Column() {
-      if (this.unavailable) {
-        this.Header();
-        Text(this.feedback)
-          .fontSize(TypeSize.bodySmall)
-          .fontWeight(TypeWeight.regular)
-          .fontColor(Colors.inkSoft)
-          .margin({ top: Space.lg });
-      } else {
-        List({ scroller: this.scroller, space: Space.md }) {
-          ListItem() {
-            this.Header();
-          }.margin({ bottom: Space.xs })
-
-          if (this.resumed) {
+    Stack({ alignContent: Alignment.Center }) {
+      Column() {
+        if (this.unavailable) {
+          this.Header();
+          Text(this.feedback)
+            .fontSize(TypeSize.bodySmall)
+            .fontWeight(TypeWeight.regular)
+            .fontColor(Colors.inkSoft)
+            .margin({ top: Space.lg });
+        } else {
+          List({ scroller: this.scroller, space: Space.md }) {
             ListItem() {
-              this.DraftBanner();
+              this.Header();
+            }.margin({ bottom: Space.xs })
+
+            if (this.resumed) {
+              ListItem() {
+                this.DraftBanner();
+              }
             }
-          }
 
-          ListItem() {
-            this.TitleCard();
-          }
-
-          ListItem() {
-            this.SectionHeading();
-          }
-
-          ForEach(this.draft.types, (type: ModuleType) => {
             ListItem() {
-              this.ModuleCard(type);
+              this.TitleCard();
             }
-          }, (type: ModuleType) => type)
 
-          if (this.availableOptions().length > 0) {
             ListItem() {
-              this.AvailableTray();
-            }.margin({ top: Space.xs })
-          }
+              this.SectionHeading();
+            }
 
-          ListItem() {
-            this.SubmitArea();
-          }.margin({ top: Space.sm })
+            ForEach(this.draft.types, (type: ModuleType) => {
+              ListItem() {
+                this.ModuleCard(type);
+              }
+            }, (type: ModuleType) => type)
+
+            if (this.availableOptions().length > 0) {
+              ListItem() {
+                this.AvailableTray();
+              }.margin({ top: Space.xs })
+            }
+
+            ListItem() {
+              this.SubmitArea();
+            }.margin({ top: Space.sm })
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .scrollBar(BarState.Off)
+          .enabled(!this.busy && !this.draft.token)
         }
-        .width('100%')
-        .layoutWeight(1)
-        .scrollBar(BarState.Off)
-        .enabled(!this.busy && !this.draft.token)
+      }
+      .width('100%')
+      .height('100%')
+      .padding({
+        left: Space.page,
+        right: Space.page,
+        top: Space.lg,
+        bottom: Space.lg
+      })
+      .backgroundColor(Colors.bg)
+
+      if (this.confirmExit) {
+        this.ExitConfirmOverlay();
       }
     }
     .width('100%')
     .height('100%')
-    .padding({
-      left: Space.page,
-      right: Space.page,
-      top: Space.lg,
-      bottom: Space.lg
-    })
-    .backgroundColor(Colors.bg)
+  }
+
+  @Builder
+  private ExitConfirmOverlay() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#59191714')
+        .onClick(() => {
+          this.confirmExit = false;
+        });
+
+      Column({ space: Space.md }) {
+        Column({ space: Space.xs }) {
+          Text('退出编辑？')
+            .fontSize(TypeSize.title)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink)
+            .width('100%');
+          Text('当前修改尚未保存，可保留草稿以便下次继续。')
+            .fontSize(TypeSize.bodySmall)
+            .fontWeight(TypeWeight.regular)
+            .fontColor(Colors.inkSoft)
+            .width('100%');
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start);
+
+        Column({ space: Space.xs }) {
+          Button('保留草稿')
+            .type(ButtonType.Normal)
+            .width('100%')
+            .constraintSize({ minHeight: 44 })
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.bg)
+            .backgroundColor(Colors.ink)
+            .borderRadius(Radius.card)
+            .onClick(() => {
+              this.confirmExit = false;
+              this.leave(false);
+            });
+          Button('放弃')
+            .type(ButtonType.Normal)
+            .width('100%')
+            .constraintSize({ minHeight: 44 })
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.red)
+            .backgroundColor(Color.Transparent)
+            .borderRadius(Radius.card)
+            .onClick(() => {
+              this.confirmExit = false;
+              this.leave(true);
+            });
+          Divider().color(Colors.hairline);
+          Button('继续编辑')
+            .type(ButtonType.Normal)
+            .width('100%')
+            .constraintSize({ minHeight: 44 })
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.regular)
+            .fontColor(Colors.inkSoft)
+            .backgroundColor(Color.Transparent)
+            .borderRadius(Radius.card)
+            .onClick(() => {
+              this.confirmExit = false;
+            });
+        }
+        .width('100%');
+      }
+      .width('84%')
+      .constraintSize({ maxWidth: 320 })
+      .padding(Space.page)
+      .backgroundColor(Colors.card)
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: Colors.hairline });
+    }
+    .width('100%')
+    .height('100%');
   }
 
   @Builder
@@ -572,13 +659,31 @@ struct CreateMatter {
         Text(this.expanded === type ? '⌃' : '⌄')
           .fontSize(18)
           .fontColor(Colors.inkMuted);
-        Toggle({ type: ToggleType.Switch, isOn: true })
-          .width(44)
-          .height(26)
-          .selectedColor(Colors.ink)
-          .onChange((on: boolean) => {
-            if (!on) this.disable(type);
-          });
+        Button({ type: ButtonType.Normal }) {
+          Row() {
+            Column()
+              .width(16)
+              .height(16)
+              .borderRadius(2)
+              .backgroundColor(Colors.card);
+          }
+          .width(40)
+          .height(22)
+          .padding({ left: 3, right: 3 })
+          .justifyContent(FlexAlign.End)
+          .alignItems(VerticalAlign.Center)
+          .backgroundColor(Colors.ink)
+          .borderRadius(Radius.chip);
+        }
+        .width(48)
+        .height(44)
+        .padding(0)
+        .backgroundColor(Color.Transparent)
+        .borderRadius(Radius.card)
+        .accessibilityText('关闭' + this.moduleTitle(type))
+        .onClick(() => {
+          this.disable(type);
+        });
       }
       .width('100%')
       .constraintSize({ minHeight: 76 })
