@@ -1,6 +1,6 @@
 import { DateMode } from '../model/Types';
 import { daysUntil, formatDate, pad2 } from '../common/DateFormat';
-import { Colors, Radius, Space } from '../common/Theme';
+import { Colors, Radius, Space, TABULAR_NUMS, TypeSize, TypeWeight } from '../common/Theme';
 
 @Component
 export struct MatterDateEditor {
@@ -58,72 +58,75 @@ export struct MatterDateEditor {
 
   @Builder
   private modeOption(value: DateMode, title: string, help: string) {
-    Row({ space: Space.normal }) {
+    Row({ space: Space.md }) {
       Stack({ alignContent: Alignment.Center }) {
         Column()
-          .width(18)
-          .height(18)
-          .borderRadius(9)
-          .backgroundColor(Colors.surface)
-          .border({ width: 1, color: this.mode === value ? Colors.primary : Colors.border });
+          .width(20)
+          .height(20)
+          .borderRadius(10)
+          .backgroundColor(Color.Transparent)
+          .border({ width: 1, color: this.mode === value ? Colors.ink : Colors.line });
         if (this.mode === value) {
           Column()
-            .width(8)
-            .height(8)
-            .borderRadius(4)
-            .backgroundColor(Colors.primary);
+            .width(10)
+            .height(10)
+            .borderRadius(5)
+            .backgroundColor(Colors.ink);
         }
       }
-      .width(18)
-      .height(18);
+      .width(20)
+      .height(20);
 
-      Column({ space: 2 }) {
+      Column({ space: Space.xs }) {
         Text(title)
-          .fontSize(15)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(Colors.text);
+          .fontSize(TypeSize.body)
+          .fontWeight(this.mode === value ? TypeWeight.semibold : TypeWeight.regular)
+          .fontColor(this.mode === value ? Colors.ink : Colors.inkSoft);
         Text(help)
-          .fontSize(13)
-          .fontColor(Colors.subText);
+          .fontSize(TypeSize.meta)
+          .fontWeight(TypeWeight.regular)
+          .fontColor(Colors.inkMuted);
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1);
     }
     .width('100%')
-    .constraintSize({ minHeight: 66 })
-    .padding(Space.normal)
-    .margin({ bottom: Space.small })
-    .backgroundColor(this.mode === value ? Colors.primarySoft : Colors.page)
-    .borderRadius(Radius.normal)
-    .border({ width: 1, color: this.mode === value ? Colors.primary : Colors.border })
+    .constraintSize({ minHeight: 56 })
+    .padding(Space.md)
+    .margin({ bottom: Space.xs })
+    .backgroundColor(this.mode === value ? Colors.wash : Color.Transparent)
+    .borderRadius(Radius.card)
     .onClick(() => this.selectMode(value));
   }
 
   @Builder
   private pickerField(label: string, value: string, onPick: () => void) {
-    Column({ space: Space.small }) {
+    Column({ space: Space.sm }) {
       Text(label)
-        .fontSize(15)
-        .fontColor(Colors.text)
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft)
         .width('100%');
       Button() {
         Row() {
           Text(value)
-            .fontSize(15)
-            .fontColor(Colors.text);
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.regular)
+            .fontColor(Colors.ink)
+            .fontFeature(TABULAR_NUMS);
           Blank();
           Text('⌄')
             .fontSize(16)
-            .fontColor(Colors.subText);
+            .fontColor(Colors.inkMuted);
         }
         .width('100%')
-        .padding({ left: Space.normal, right: Space.normal });
+        .padding({ left: Space.md, right: Space.md });
       }
       .width('100%')
-      .height(44)
+      .constraintSize({ minHeight: 44 })
       .type(ButtonType.Normal)
-      .backgroundColor(Colors.surfaceSoft)
-      .borderRadius(Radius.normal)
+      .backgroundColor(Colors.wash)
+      .borderRadius(Radius.card)
       .onClick(onPick);
     }
     .width('100%')
@@ -131,10 +134,11 @@ export struct MatterDateEditor {
   }
 
   build() {
-    Column({ space: Space.small }) {
+    Column({ space: Space.sm }) {
       Text('你想怎样使用这个日期？')
-        .fontSize(13)
-        .fontColor(Colors.subText)
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft)
         .width('100%');
 
       this.modeOption('countdown', '倒数日', '看距离某一天还有多少天');
@@ -144,28 +148,32 @@ export struct MatterDateEditor {
       this.pickerField(this.dateLabel(), formatDate(this.date.getTime()), () => this.pickDate());
 
       if (this.mode === 'deadline') {
-        Row({ space: Space.small }) {
+        Row({ space: Space.md }) {
           Stack({ alignContent: Alignment.Center }) {
             Column()
-              .width(18)
-              .height(18)
-              .borderRadius(4)
-              .backgroundColor(this.hasTime ? Colors.primary : Colors.surface)
-              .border({ width: 1, color: this.hasTime ? Colors.primary : Colors.border });
+              .width(20)
+              .height(20)
+              .borderRadius(Radius.chip)
+              .backgroundColor(this.hasTime ? Colors.ink : Color.Transparent)
+              .border({ width: 1, color: this.hasTime ? Colors.ink : Colors.line });
             if (this.hasTime) {
               Text('✓')
-                .fontSize(12)
-                .fontColor(Color.White);
+                .fontSize(TypeSize.meta)
+                .fontWeight(TypeWeight.semibold)
+                .fontColor(Colors.bg);
             }
           }
-          .width(18)
-          .height(18);
+          .width(20)
+          .height(20);
 
           Text('设置具体时间')
-            .fontSize(15)
-            .fontColor(Colors.text);
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.regular)
+            .fontColor(Colors.ink);
         }
         .width('100%')
+        .constraintSize({ minHeight: 48 })
+        .alignItems(VerticalAlign.Center)
         .onClick(() => {
           if (!this.hasTime) {
             const next = new Date(this.date.getTime());

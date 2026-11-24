@@ -4,8 +4,9 @@ import { MatterService } from '../contracts/MatterService';
 import { router } from '@kit.ArkUI';
 import { MatterServices } from '../application/MatterServices';
 import { MatterDateEditor } from '../components/MatterDateEditor';
+import { ModuleIcon } from '../components/ModuleIcon';
 import { dateModeLabel, dateSummary, daysUntil, formatDate } from '../common/DateFormat';
-import { Colors, Radius, Space } from '../common/Theme';
+import { Colors, Radius, Space, TABULAR_NUMS, TypeSize, TypeWeight } from '../common/Theme';
 import { EditorDraft, EditorItem, invalidEditorField } from '../domain/MatterEditor';
 import { createId, MODULE_OPTIONS, moduleLabel } from '../model/Defaults';
 import { DateMode, Matter, ModuleOption, ModuleType } from '../model/Types';
@@ -41,6 +42,7 @@ struct CreateMatter {
   @State picking: boolean = false;
   @State candidates: Matter[] = [];
   @State editingItemId: string = '';
+  @State titleFocused: boolean = false;
 
   aboutToAppear(): void {
     this.initialize();
@@ -317,12 +319,16 @@ struct CreateMatter {
 
   private cardBorder(type: ModuleType): BorderOptions {
     if (this.invalid === type) {
-      return { width: 1, color: Colors.danger, radius: Radius.normal };
+      return {
+        width: { left: 1, top: 1, right: 1, bottom: 2 },
+        color: { left: Colors.hairline, top: Colors.hairline, right: Colors.hairline, bottom: Colors.red },
+        radius: Radius.card
+      };
     }
     return {
-      width: { left: 3, top: 1, right: 1, bottom: 1 },
-      color: { left: Colors.primary, top: Colors.border, right: Colors.border, bottom: Colors.border },
-      radius: Radius.normal
+      width: 1,
+      color: Colors.hairline,
+      radius: Radius.card
     };
   }
 
@@ -330,23 +336,26 @@ struct CreateMatter {
     Column() {
       if (this.unavailable) {
         this.Header();
-        Text(this.feedback).fontSize(15).fontColor(Colors.subText).margin({ top: Space.large });
-        Button('重新读取').onClick(() => this.initialize());
+        Text(this.feedback)
+          .fontSize(TypeSize.bodySmall)
+          .fontWeight(TypeWeight.regular)
+          .fontColor(Colors.inkSoft)
+          .margin({ top: Space.lg });
       } else {
-        List({ scroller: this.scroller, space: Space.small }) {
+        List({ scroller: this.scroller, space: Space.md }) {
           ListItem() {
             this.Header();
-          }.margin({ bottom: Space.small })
+          }.margin({ bottom: Space.xs })
 
           if (this.resumed) {
             ListItem() {
               this.DraftBanner();
-            }.margin({ bottom: Space.small }).enabled(!this.busy && !this.draft.token)
+            }
           }
 
           ListItem() {
             this.TitleCard();
-          }.margin({ bottom: Space.small }).enabled(!this.busy && !this.draft.token)
+          }
 
           ListItem() {
             this.SectionHeading();
@@ -355,147 +364,206 @@ struct CreateMatter {
           ForEach(this.draft.types, (type: ModuleType) => {
             ListItem() {
               this.ModuleCard(type);
-            }.enabled(!this.busy && !this.draft.token)
+            }
           }, (type: ModuleType) => type)
 
           if (this.availableOptions().length > 0) {
             ListItem() {
               this.AvailableTray();
-            }.margin({ top: Space.small }).enabled(!this.busy && !this.draft.token)
+            }.margin({ top: Space.xs })
           }
 
           ListItem() {
             this.SubmitArea();
-          }.margin({ top: Space.small })
+          }.margin({ top: Space.sm })
         }
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Off)
-        .enabled(!this.busy)
+        .enabled(!this.busy && !this.draft.token)
       }
     }
     .width('100%')
     .height('100%')
-    .padding(Space.large)
-    .backgroundColor(Colors.page)
+    .padding({
+      left: Space.page,
+      right: Space.page,
+      top: Space.lg,
+      bottom: Space.lg
+    })
+    .backgroundColor(Colors.bg)
   }
 
   @Builder
   private Header() {
-    Row({ space: Space.normal }) {
-      Button('返回')
-        .type(ButtonType.Normal)
-        .height(40)
-        .fontSize(14)
-        .fontColor(Colors.primary)
-        .backgroundColor(Colors.primarySoft)
-        .borderRadius(Radius.normal)
-        .padding({ left: 14, right: 14 })
-        .enabled(!this.busy)
-        .onClick(() => { if (!this.onBackPress()) router.back(); });
+    Column({ space: Space.sm }) {
+      Row() {
+        Button('返回')
+          .type(ButtonType.Normal)
+          .constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(Radius.card)
+          .padding({ left: 0, right: Space.md })
+          .enabled(!this.busy)
+          .opacity(this.busy ? 0.4 : 1)
+          .onClick(() => { if (!this.onBackPress()) router.back(); });
+      }
+      .width('100%');
+
       Text(this.draft.editing ? '编辑事项' : this.ownerId ? '创建并加入列表' : '新建事项')
-        .fontSize(24)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text)
-        .maxLines(1)
-        .layoutWeight(1);
+        .fontSize(TypeSize.display)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink)
+        .maxLines(2)
+        .width('100%');
     }
-    .width('100%');
+    .width('100%')
+    .alignItems(HorizontalAlign.Start);
   }
 
   @Builder
   private DraftBanner() {
-    Row({ space: Space.small }) {
+    Row({ space: Space.sm }) {
       Text('已恢复未完成的草稿')
-        .fontSize(13)
-        .fontColor(Colors.primary)
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft)
         .layoutWeight(1);
       Button('重新开始')
         .type(ButtonType.Normal)
-        .fontSize(13)
-        .fontColor(Colors.primary)
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink)
         .backgroundColor(Color.Transparent)
-        .padding(0)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.sm, right: Space.sm })
         .onClick(() => this.restartDraft());
     }
     .width('100%')
-    .padding(Space.normal)
-    .backgroundColor(Colors.primarySoft)
-    .borderRadius(Radius.normal);
+    .padding({
+      left: Space.md,
+      right: Space.sm,
+      top: Space.xs,
+      bottom: Space.xs
+    })
+    .backgroundColor(Colors.card)
+    .borderRadius(Radius.card)
+    .border({ width: 1, color: Colors.hairline });
   }
 
   @Builder
   private TitleCard() {
-    Column({ space: Space.normal }) {
+    Column({ space: Space.md }) {
       Text('事项名称')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text);
-      TextInput({ text: this.draft.title })
-        .height(46)
-        .fontSize(17)
-        .fontColor(Colors.text)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .padding({ left: Space.normal, right: Space.normal })
-        .border({ width: this.invalid === 'title' ? 1 : 0, color: Colors.danger })
-        .maxLength(80)
-        .onChange((value: string) => { this.draft.title = value; this.changed(); });
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.inkSoft);
+      Column() {
+        TextInput({ placeholder: '写下这件事的名称', text: this.draft.title })
+          .width('100%')
+          .constraintSize({ minHeight: 50 })
+          .fontSize(TypeSize.heading)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink)
+          .placeholderColor(Colors.inkMuted)
+          .caretColor(Colors.red)
+          .backgroundColor(Color.Transparent)
+          .padding({ left: Space.md, right: Space.md })
+          .maxLength(80)
+          .onFocus(() => { this.titleFocused = true; })
+          .onBlur(() => { this.titleFocused = false; })
+          .onChange((value: string) => { this.draft.title = value; this.changed(); });
+        Column()
+          .width('100%')
+          .height(2)
+          .backgroundColor(this.invalid === 'title'
+            ? Colors.red
+            : this.titleFocused ? Colors.ink : Color.Transparent);
+      }
+      .width('100%')
+      .backgroundColor(Colors.wash)
+      .borderRadius(Radius.card)
+      .clip(true);
 
       Text('说明（可选）')
-        .fontSize(13)
-        .fontColor(Colors.subText);
-      TextInput({ text: this.draft.description })
-        .height(40)
-        .fontSize(14)
-        .fontColor(Colors.text)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .padding({ left: Space.normal, right: Space.normal })
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft);
+      TextInput({ placeholder: '补充背景或提示', text: this.draft.description })
+        .width('100%')
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.md, right: Space.md })
         .onChange((value: string) => { this.draft.description = value; this.changed(); });
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding(Space.large)
-    .backgroundColor(Colors.surface)
-    .borderRadius(Radius.large)
-    .border({ width: 1, color: Colors.border });
+    .padding(Space.lg)
+    .backgroundColor(Colors.card)
+    .borderRadius(Radius.card)
+    .border({ width: 1, color: Colors.hairline });
   }
 
   @Builder
   private SectionHeading() {
     Row() {
       Text('事项信息')
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text);
+        .fontSize(TypeSize.title)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink);
       Blank();
       Text(this.draft.types.length > 0 ? `已启用 ${this.draft.types.length} 项` : '可选')
-        .fontSize(12)
-        .fontColor(Colors.subText);
+        .fontSize(TypeSize.meta)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkMuted)
+        .fontFeature(TABULAR_NUMS);
     }
     .width('100%')
-    .margin({ bottom: Space.tiny });
+    .margin({ top: Space.xs });
   }
 
   @Builder
   private ModuleCard(type: ModuleType) {
     Column() {
-      Row({ space: Space.small }) {
-        Column({ space: 3 }) {
-          Text('已启用')
-            .fontSize(11)
-            .fontColor(Colors.primary);
+      Row({ space: Space.md }) {
+        Column() {
+          ModuleIcon({ moduleType: type, ink: Colors.ink, iconSize: 20 });
+        }
+        .width(36)
+        .height(36)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.chip);
+
+        Column({ space: Space.xs }) {
           Text(this.moduleTitle(type))
-            .fontSize(18)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(Colors.text);
+            .fontSize(TypeSize.title)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink);
           if (this.hasResult(type)) {
             Text(this.summary(type))
-              .fontSize(13)
-              .fontColor(Colors.subText)
+              .fontSize(TypeSize.bodySmall)
+              .fontWeight(TypeWeight.regular)
+              .fontColor(Colors.inkSoft)
+              .fontFeature(TABULAR_NUMS)
               .maxLines(2)
               .textOverflow({ overflow: TextOverflow.Ellipsis });
+          } else {
+            Text('已启用 · 点击配置')
+              .fontSize(TypeSize.meta)
+              .fontWeight(TypeWeight.regular)
+              .fontColor(Colors.inkMuted);
           }
         }
         .alignItems(HorizontalAlign.Start)
@@ -503,107 +571,125 @@ struct CreateMatter {
 
         Text(this.expanded === type ? '⌃' : '⌄')
           .fontSize(18)
-          .fontColor(Colors.subText);
+          .fontColor(Colors.inkMuted);
         Toggle({ type: ToggleType.Switch, isOn: true })
           .width(44)
           .height(26)
-          .selectedColor(Colors.primary)
+          .selectedColor(Colors.ink)
           .onChange((on: boolean) => {
             if (!on) this.disable(type);
           });
       }
       .width('100%')
-      .constraintSize({ minHeight: 92 })
+      .constraintSize({ minHeight: 76 })
+      .padding({ top: Space.md, bottom: Space.md })
       .onClick(() => this.toggleExpand(type));
 
       if (this.expanded === type) {
-        Column({ space: Space.normal }) {
+        Column({ space: Space.md }) {
           this.config(type);
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
-        .padding({ top: Space.large, bottom: Space.large });
+        .padding({ top: Space.lg, bottom: Space.lg })
+        .border({ width: { top: 1 }, color: Colors.hairline });
 
         if (this.hasResult(type)) {
-          Column({ space: Space.tiny }) {
+          Column({ space: Space.xs }) {
             Text('设置结果')
-              .fontSize(13)
-              .fontColor(Colors.subText);
+              .fontSize(TypeSize.meta)
+              .fontWeight(TypeWeight.regular)
+              .fontColor(Colors.inkMuted);
             Text(this.resultText(type))
-              .fontSize(14)
-              .fontColor(Colors.text);
+              .fontSize(TypeSize.body)
+              .fontWeight(TypeWeight.regular)
+              .fontColor(Colors.ink)
+              .fontFeature(TABULAR_NUMS);
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)
-          .padding(Space.normal)
-          .backgroundColor(Colors.surfaceSoft)
-          .borderRadius(Radius.normal);
+          .padding(Space.md)
+          .backgroundColor(Colors.wash)
+          .borderRadius(Radius.card);
         }
 
         Row() {
           Text('修改自动保留')
-            .fontSize(12)
-            .fontColor(Colors.subText);
+            .fontSize(TypeSize.meta)
+            .fontWeight(TypeWeight.regular)
+            .fontColor(Colors.inkMuted);
           Blank();
           Button('收起设置 ⌃')
             .type(ButtonType.Normal)
-            .fontSize(13)
-            .fontColor(Colors.primary)
+            .constraintSize({ minHeight: 40 })
+            .fontSize(TypeSize.bodySmall)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink)
             .backgroundColor(Color.Transparent)
-            .padding(0)
+            .borderRadius(Radius.card)
+            .padding({ left: Space.sm, right: 0 })
             .onClick(() => { this.expanded = ''; });
         }
         .width('100%')
-        .padding({ top: Space.normal })
-        .border({ width: { top: 1 }, color: Colors.border });
+        .padding({ top: Space.sm, bottom: Space.xs })
+        .margin({ top: Space.md })
+        .border({ width: { top: 1 }, color: Colors.hairline });
       }
     }
     .width('100%')
-    .padding({ left: 14, right: 14 })
-    .backgroundColor(Colors.surface)
-    .border(this.cardBorder(type))
-    .shadow({ radius: 12, color: '#0F101828', offsetX: 0, offsetY: 3 });
+    .padding({ left: Space.lg, right: Space.lg })
+    .backgroundColor(Colors.card)
+    .border(this.cardBorder(type));
   }
 
   @Builder
   private AvailableTray() {
-    Column({ space: Space.small }) {
+    Column({ space: Space.sm }) {
       Row() {
         Text(this.draft.types.length > 0 ? '还可以启用' : '选择需要的信息')
-          .fontSize(12)
-          .fontColor(Colors.subText);
+          .fontSize(TypeSize.meta)
+          .fontWeight(TypeWeight.regular)
+          .fontColor(Colors.inkMuted);
         Blank();
         Text('可多选')
-          .fontSize(12)
-          .fontColor(Colors.subText);
+          .fontSize(TypeSize.meta)
+          .fontWeight(TypeWeight.regular)
+          .fontColor(Colors.inkMuted);
       }
       .width('100%')
-      .padding({ left: 3, right: 3, bottom: Space.small });
+      .padding({ left: Space.xs, right: Space.xs, bottom: Space.xs });
 
       Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
         ForEach(this.availableOptions(), (option: ModuleOption) => {
-          Row({ space: Space.small }) {
-            Column({ space: 3 }) {
+          Row({ space: Space.sm }) {
+            ModuleIcon({ moduleType: option.type, ink: Colors.inkSoft, iconSize: 18 });
+            Column({ space: 2 }) {
               Text(option.label)
-                .fontSize(14)
-                .fontColor(Colors.subText);
+                .fontSize(TypeSize.body)
+                .fontWeight(TypeWeight.semibold)
+                .fontColor(Colors.ink);
               Text(this.optionHelp(option.type))
-                .fontSize(12)
-                .fontColor(Colors.subText)
-                .maxLines(1)
+                .fontSize(TypeSize.meta)
+                .fontWeight(TypeWeight.regular)
+                .fontColor(Colors.inkSoft)
+                .maxLines(2)
                 .textOverflow({ overflow: TextOverflow.Ellipsis });
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1);
 
-            Text('⌄')
-              .fontSize(14)
-              .fontColor(Colors.subText);
+            Text('+')
+              .fontSize(16)
+              .fontWeight(TypeWeight.semibold)
+              .fontColor(Colors.inkMuted);
           }
           .width(this.compactWidth ? '100%' : '48%')
-          .constraintSize({ minHeight: 64 })
-          .padding({ left: 6, right: 6, top: 9, bottom: 9 })
-          .borderRadius(Radius.small)
+          .constraintSize({ minHeight: 60 })
+          .padding({ left: Space.md, right: Space.md, top: Space.sm, bottom: Space.sm })
+          .margin({ bottom: Space.sm })
+          .backgroundColor(Colors.card)
+          .borderRadius(Radius.card)
+          .border({ width: 1, color: Colors.hairline })
           .onClick(() => this.activate(option.type));
         }, (option: ModuleOption) => option.type);
       }
@@ -614,29 +700,30 @@ struct CreateMatter {
       });
     }
     .width('100%')
-    .padding(Space.normal)
-    .backgroundColor(Colors.surfaceSoft)
-    .borderRadius(Radius.normal);
+    .padding({ top: Space.xs });
   }
 
   @Builder
   private SubmitArea() {
-    Column({ space: Space.small }) {
+    Column({ space: Space.sm }) {
       Button(this.busy ? '正在保存' : this.draft.token ? '重试保存' :
         this.draft.editing ? '保存修改' : '创建事项')
         .type(ButtonType.Normal)
         .width('100%')
-        .height(46)
-        .fontSize(16)
-        .fontColor(Color.White)
-        .backgroundColor(Colors.primary)
-        .borderRadius(Radius.normal)
+        .constraintSize({ minHeight: 44 })
+        .fontSize(TypeSize.body)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.onRed)
+        .backgroundColor(Colors.red)
+        .borderRadius(Radius.card)
         .enabled(!this.busy)
+        .opacity(this.busy ? 0.4 : 1)
         .onClick(() => { this.save(); });
       if (this.feedback) {
         Text(this.feedback)
-          .fontSize(13)
-          .fontColor(Colors.danger)
+          .fontSize(TypeSize.meta)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.red)
           .width('100%');
       }
     }
@@ -649,85 +736,119 @@ struct CreateMatter {
       MatterDateEditor({ date: $date, mode: $mode, hasTime: $hasTime });
 
       Text('日期名称（可选）')
-        .fontSize(15)
-        .fontColor(Colors.text);
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft);
       TextInput({ text: this.draft.dateName })
-        .height(44)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .padding({ left: Space.normal, right: Space.normal })
+        .width('100%')
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.md, right: Space.md })
         .maxLength(30)
         .onChange((value: string) => { this.draft.dateName = value; this.changed(); });
 
       Text('地点（可选）')
-        .fontSize(15)
-        .fontColor(Colors.text);
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft);
       TextInput({ text: this.draft.location })
-        .height(44)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .padding({ left: Space.normal, right: Space.normal })
+        .width('100%')
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.md, right: Space.md })
         .onChange((value: string) => { this.draft.location = value; this.changed(); });
     } else if (type === ModuleType.Counter) {
       Text('计数名称（可选）')
-        .fontSize(15)
-        .fontColor(Colors.text);
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft);
       TextInput({ text: this.draft.counterName })
-        .height(44)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .padding({ left: Space.normal, right: Space.normal })
+        .width('100%')
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.md, right: Space.md })
         .maxLength(30)
         .onChange((value: string) => { this.draft.counterName = value; this.changed(); });
 
       Text('初始数值')
-        .fontSize(15)
-        .fontColor(Colors.text);
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft);
       TextInput({ text: this.draft.initial })
-        .height(44)
-        .fontSize(15)
+        .width('100%')
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
         .type(InputType.NUMBER_DECIMAL)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .padding({ left: Space.normal, right: Space.normal })
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.md, right: Space.md })
         .onChange((value: string) => { this.draft.initial = value; this.changed(); });
 
       Text('每次增加')
-        .fontSize(15)
-        .fontColor(Colors.text);
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft);
       TextInput({ text: this.draft.step })
-        .height(44)
-        .fontSize(15)
+        .width('100%')
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
         .type(InputType.NUMBER_DECIMAL)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .padding({ left: Space.normal, right: Space.normal })
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.md, right: Space.md })
         .onChange((value: string) => { this.draft.step = value; this.changed(); });
     } else if (type === ModuleType.Note) {
       Text('备注内容')
-        .fontSize(15)
-        .fontColor(Colors.text);
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft);
       TextArea({ text: this.draft.note })
         .width('100%')
         .height(120)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .padding(Space.normal)
+        .fontSize(TypeSize.body)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding(Space.md)
         .onChange((value: string) => { this.draft.note = value; this.changed(); });
     } else if (type === ModuleType.EventRecord) {
       Text('记录名称（可选）')
-        .fontSize(15)
-        .fontColor(Colors.text);
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft);
       TextInput({ text: this.draft.recordName })
-        .height(44)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .padding({ left: Space.normal, right: Space.normal })
+        .width('100%')
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.md, right: Space.md })
         .maxLength(30)
         .onChange((value: string) => { this.draft.recordName = value; this.changed(); });
     } else if (type === ModuleType.Checklist) {
@@ -737,23 +858,27 @@ struct CreateMatter {
 
   @Builder
   private listEditor() {
-    Row({ space: Space.small }) {
-      TextInput({ text: this.draft.pending })
-        .height(42)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
-        .padding({ left: Space.normal, right: Space.normal })
+    Row({ space: Space.sm }) {
+      TextInput({ placeholder: '输入列表项', text: this.draft.pending })
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.md, right: Space.md })
         .layoutWeight(1)
         .onChange((value: string) => { this.draft.pending = value; this.changed(); });
       Button('添加')
         .type(ButtonType.Normal)
-        .height(42)
-        .fontSize(14)
-        .fontColor(Color.White)
-        .backgroundColor(Colors.primary)
-        .borderRadius(Radius.normal)
-        .padding({ left: 14, right: 14 })
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.lg, right: Space.lg })
         .onClick(() => {
           if (this.draft.pending.trim()) {
             this.draft.items = this.draft.items.concat({ id: createId('check'), title: this.draft.pending.trim() });
@@ -766,31 +891,35 @@ struct CreateMatter {
 
     Button('↗ 关联已有事项')
       .type(ButtonType.Normal)
-      .fontSize(14)
-      .fontColor(Colors.primary)
+      .constraintSize({ minHeight: 44 })
+      .fontSize(TypeSize.body)
+      .fontWeight(TypeWeight.semibold)
+      .fontColor(Colors.ink)
       .backgroundColor(Color.Transparent)
-      .padding({ top: 17, bottom: 17 })
+      .borderRadius(Radius.card)
+      .padding({ left: 0, right: Space.md })
       .onClick(() => {
         this.picking = !this.picking;
         this.candidates = this.service.linkCandidates(this.draft, this.ownerId);
       });
 
     if (this.picking) {
-      Column({ space: Space.small }) {
+      Column({ space: Space.sm }) {
         if (!this.candidates.length) {
           Text('暂无可关联事项')
-            .fontSize(13)
-            .fontColor(Colors.subText);
+            .fontSize(TypeSize.bodySmall)
+            .fontColor(Colors.inkSoft);
         }
         ForEach(this.candidates, (matter: Matter) => {
           Button(matter.title)
             .type(ButtonType.Normal)
             .width('100%')
-            .height(42)
-            .fontSize(14)
-            .fontColor(Colors.text)
-            .backgroundColor(Colors.surface)
-            .borderRadius(Radius.small)
+            .constraintSize({ minHeight: 40 })
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.regular)
+            .fontColor(Colors.ink)
+            .backgroundColor(Colors.card)
+            .borderRadius(Radius.card)
             .onClick(() => {
               this.draft.items = this.draft.items.concat({ id: createId('link'), title: matter.title, targetId: matter.id });
               this.picking = false;
@@ -799,34 +928,39 @@ struct CreateMatter {
         }, (matter: Matter) => matter.id);
       }
       .width('100%')
-      .padding(Space.small)
-      .backgroundColor(Colors.surfaceSoft)
-      .borderRadius(Radius.normal);
+      .padding(Space.sm)
+      .backgroundColor(Colors.wash)
+      .borderRadius(Radius.card);
     }
 
     ForEach(this.draft.items, (item: EditorItem) => {
-      Row({ space: Space.small }) {
-        Column({ space: 2 }) {
+      Row({ space: Space.sm }) {
+        Column({ space: Space.xs }) {
           if (!item.targetId && this.editingItemId === item.id) {
             TextInput({ text: item.title })
-              .height(36)
-              .fontSize(14)
-              .backgroundColor(Colors.surfaceSoft)
-              .borderRadius(Radius.small)
-              .padding({ left: Space.small, right: Space.small })
+              .width('100%')
+              .constraintSize({ minHeight: 40 })
+              .fontSize(TypeSize.body)
+              .fontColor(Colors.ink)
+              .caretColor(Colors.red)
+              .backgroundColor(Colors.wash)
+              .borderRadius(Radius.card)
+              .padding({ left: Space.sm, right: Space.sm })
               .onChange((value: string) => {
                 item.title = value;
                 this.changed();
               });
           } else {
             Text(item.targetId ? (this.service.findMatter(item.targetId)?.title ?? item.title) : item.title)
-              .fontSize(14)
-              .fontColor(Colors.text)
-              .maxLines(1)
+              .fontSize(TypeSize.body)
+              .fontWeight(TypeWeight.regular)
+              .fontColor(Colors.ink)
+              .maxLines(2)
               .textOverflow({ overflow: TextOverflow.Ellipsis });
             Text(item.targetId ? '关联事项' : '文字项')
-              .fontSize(12)
-              .fontColor(Colors.subText);
+              .fontSize(TypeSize.meta)
+              .fontWeight(TypeWeight.regular)
+              .fontColor(Colors.inkMuted);
           }
         }
         .alignItems(HorizontalAlign.Start)
@@ -835,20 +969,26 @@ struct CreateMatter {
         if (!item.targetId) {
           Button(this.editingItemId === item.id ? '完成' : '修改')
             .type(ButtonType.Normal)
-            .fontSize(13)
-            .fontColor(Colors.primary)
+            .constraintSize({ minHeight: 40 })
+            .fontSize(TypeSize.bodySmall)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink)
             .backgroundColor(Color.Transparent)
-            .padding(0)
+            .borderRadius(Radius.card)
+            .padding({ left: Space.sm, right: Space.sm })
             .onClick(() => {
               this.editingItemId = this.editingItemId === item.id ? '' : item.id;
             });
         }
         Button('移除')
           .type(ButtonType.Normal)
-          .fontSize(13)
-          .fontColor(Colors.primary)
+          .constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.bodySmall)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.red)
           .backgroundColor(Color.Transparent)
-          .padding(0)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.sm, right: Space.sm })
           .onClick(() => {
             this.draft.items = this.draft.items.filter((entry: EditorItem) => entry.id !== item.id);
             if (this.editingItemId === item.id) this.editingItemId = '';
@@ -856,8 +996,8 @@ struct CreateMatter {
           });
       }
       .width('100%')
-      .padding(Space.normal)
-      .border({ width: { bottom: 1 }, color: Colors.border });
+      .padding({ top: Space.sm, bottom: Space.sm })
+      .border({ width: { bottom: 1 }, color: Colors.hairline });
     }, (item: EditorItem) => item.id);
   }
 }

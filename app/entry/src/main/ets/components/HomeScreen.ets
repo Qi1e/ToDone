@@ -9,7 +9,7 @@ import { TimelineLinkedNote } from './TimelineLinkedNote';
 import { TimelineServices } from '../application/TimelineServices';
 import { TimelineBlock, TimelineDeleteScope, TimelineEditScope, TimelineRepeat, TimelineService, TimelineTag, timelineRepeatLabel, timelineReminderLabel } from '../contracts/TimelineService';
 import { formatDate, pad2 } from '../common/DateFormat';
-import { Colors, Radius, Space } from '../common/Theme';
+import { Colors, Radius, Space, TABULAR_NUMS, TypeSize, TypeWeight } from '../common/Theme';
 import { TimelineEditor } from './TimelineEditor';
 import { TimelineBrowseDates } from './TimelineBrowseDates';
 import { monthStart } from './TimelineDatePicker';
@@ -427,16 +427,17 @@ export struct HomeScreen {
   @Builder
   private DetailTime(label: string, stamp: number, endpoint: string) {
     Button({ type: ButtonType.Normal }) {
-      Column({ space: 2 }) {
-        Text(label).fontSize(13).fontColor(Colors.subText)
-        Text(this.clockLabel(stamp)).fontSize(26).fontWeight(FontWeight.Medium).fontColor('#214F93')
+      Column({ space: Space.xs }) {
+        Text(label).fontSize(TypeSize.meta).fontWeight(TypeWeight.regular).fontColor(Colors.inkMuted)
+        Text(this.clockLabel(stamp)).fontSize(TypeSize.figure).fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink).fontFeature(TABULAR_NUMS)
         if (localDayStart(this.current.startAt) !== localDayStart(this.current.endAt)) {
-          Text(this.dateLabel(stamp)).fontSize(13).fontColor(Colors.subText)
+          Text(this.dateLabel(stamp)).fontSize(TypeSize.meta).fontColor(Colors.inkSoft).fontFeature(TABULAR_NUMS)
         }
       }.alignItems(HorizontalAlign.Start).width('100%')
     }
-    .layoutWeight(1).height(localDayStart(this.current.startAt) === localDayStart(this.current.endAt) ? 72 : 92)
-    .padding({ top: 4, bottom: 4 }).borderRadius(Radius.small)
+    .layoutWeight(1).constraintSize({ minHeight: localDayStart(this.current.startAt) === localDayStart(this.current.endAt) ? 68 : 88 })
+    .padding({ top: Space.xs, bottom: Space.xs }).borderRadius(Radius.card)
     .backgroundColor(Color.Transparent)
     .accessibilityText('调整' + label + '时间，' + this.dateLabel(stamp) + ' ' + this.clockLabel(stamp))
     .onClick(() => this.editBlock(endpoint))
@@ -444,9 +445,9 @@ export struct HomeScreen {
 
   @Builder
   private TagLabel(tag: TimelineTag) {
-    Row({ space: Space.small }) {
-      Row().width(9).height(9).borderRadius(5).backgroundColor(tag.color)
-      Text(tag.name).fontSize(14).fontColor(Colors.subText)
+    Row({ space: Space.sm }) {
+      Row().width(8).height(8).borderRadius(4).backgroundColor(tag.color)
+      Text(tag.name).fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft)
     }
   }
 
@@ -457,18 +458,20 @@ export struct HomeScreen {
   @Builder
   private ScopeOption(scope: TimelineDeleteScope, label: string) {
     Button({ type: ButtonType.Normal }) {
-      Row({ space: Space.small }) {
-        Text(label).fontSize(16).fontColor(Colors.text).layoutWeight(1)
+      Row({ space: Space.sm }) {
+        Text(label).fontSize(TypeSize.body).fontWeight(this.pendingScope === scope ? TypeWeight.semibold : TypeWeight.regular)
+          .fontColor(this.pendingScope === scope ? Colors.ink : Colors.inkSoft).layoutWeight(1)
         Stack({ alignContent: Alignment.Center }) {
           if (this.pendingScope === scope) {
-            Row().width(8).height(8).borderRadius(4).backgroundColor(Colors.primary)
+            Row().width(10).height(10).borderRadius(5).backgroundColor(Colors.ink)
           }
-        }.width(18).height(18).borderRadius(9)
-        .border({ width: 1.5, color: this.pendingScope === scope ? Colors.primary : Colors.subText })
+        }.width(20).height(20).borderRadius(10)
+        .border({ width: 1, color: this.pendingScope === scope ? Colors.ink : Colors.line })
       }.width('100%')
     }.width('100%').constraintSize({ minHeight: 44 })
-    .padding({ left: 0, right: Space.tiny, top: Space.tiny, bottom: Space.tiny })
-    .backgroundColor(Color.Transparent)
+    .padding({ left: Space.sm, right: Space.sm, top: Space.xs, bottom: Space.xs })
+    .backgroundColor(this.pendingScope === scope ? Colors.wash : Color.Transparent)
+    .borderRadius(Radius.card)
     .accessibilityText(label + (this.pendingScope === scope ? '，已选中' : ''))
     .onClick(() => { this.pendingScope = scope; this.errorMessage = ''; })
   }
@@ -478,10 +481,11 @@ export struct HomeScreen {
     Scroll() {
       Column() {
         Text(this.confirmEdit ? '修改重复日程' : '删除重复日程')
-          .width('100%').fontSize(20).fontWeight(FontWeight.Medium).fontColor(Colors.text)
+          .width('100%').fontSize(TypeSize.heading).fontWeight(TypeWeight.semibold).fontColor(Colors.ink)
         Text(this.current.title + ' · ' + this.dateLabel(this.current.startAt) + ' ' + this.clockLabel(this.current.startAt))
           .width('100%').maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: Space.tiny, bottom: Space.small }).fontSize(14).fontColor(Colors.subText)
+          .margin({ top: Space.xs, bottom: Space.md }).fontSize(TypeSize.bodySmall)
+          .fontColor(Colors.inkSoft).fontFeature(TABULAR_NUMS)
         if (!this.confirmEdit || !this.newRepeatPattern()) {
           this.ScopeOption(TimelineDeleteScope.One, this.confirmEdit ? '仅修改这一次' : '仅删除这一次')
         }
@@ -490,19 +494,26 @@ export struct HomeScreen {
         this.ScopeOption(TimelineDeleteScope.All, this.confirmEdit ?
           (this.editStopsRepeat() ? '整个系列改为仅保留这一次' : '修改整个系列') : '删除整个系列')
         if (this.errorMessage.length > 0) {
-          Text(this.errorMessage).width('100%').fontSize(14).fontColor(Colors.danger)
+          Text(this.errorMessage).width('100%').fontSize(TypeSize.meta)
+            .fontWeight(TypeWeight.semibold).fontColor(Colors.red).margin({ top: Space.sm })
         }
         Row() {
-          Button('取消').backgroundColor(Color.Transparent).fontColor(Colors.text)
+          Button('取消').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
+            .backgroundColor(Color.Transparent).fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.regular).fontColor(Colors.inkSoft).borderRadius(Radius.card)
+            .padding({ left: Space.md, right: Space.md })
             .onClick(() => this.cancelScope())
           Blank()
           Button(this.confirmEdit ? (this.saving ? '保存中' : '保存修改') : (this.saving ? '删除中' : '确认删除'))
-            .backgroundColor(this.confirmEdit ? Colors.primary : Colors.danger).fontColor(Color.White)
+            .type(ButtonType.Normal).constraintSize({ minHeight: 40 })
+            .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
+            .backgroundColor(Colors.red).fontColor(Colors.onRed).borderRadius(Radius.card)
+            .padding({ left: Space.lg, right: Space.lg })
             .onClick(() => this.applyScope())
-        }.width('100%').constraintSize({ minHeight: 44 }).margin({ top: Space.small })
+        }.width('100%').constraintSize({ minHeight: 44 }).margin({ top: Space.md })
       }.width('100%').alignItems(HorizontalAlign.Start)
-      .padding({ left: Space.section, right: Space.section, top: Space.section, bottom: Space.normal })
-    }.width('100%').scrollBar(BarState.Auto).enabled(!this.saving)
+      .padding({ left: Space.page, right: Space.page, top: Space.section, bottom: Space.lg })
+    }.width('100%').scrollBar(BarState.Auto).backgroundColor(Colors.card).enabled(!this.saving)
   }
 
   @Builder
@@ -511,37 +522,39 @@ export struct HomeScreen {
       Row() {
         Text(this.dateLabel(this.current.startAt) + ' · 周' +
           WEEKDAYS[(new Date(this.current.startAt).getDay() + 6) % 7])
-          .fontSize(14).fontColor(Colors.subText).layoutWeight(1)
-        Button('编辑日程').height(44).padding({ left: Space.small, right: Space.small })
-          .fontSize(15).fontColor(Colors.primary).backgroundColor(Color.Transparent)
+          .fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft).fontFeature(TABULAR_NUMS).layoutWeight(1)
+        Button('编辑日程').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
+          .padding({ left: Space.sm, right: Space.sm })
+          .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink).backgroundColor(Color.Transparent).borderRadius(Radius.card)
           .onClick(() => this.editBlock(''))
       }.width('100%')
       Scroll() {
-        Column({ space: Space.normal }) {
-          Text(this.current.title).width('100%').fontSize(25)
-            .fontWeight(FontWeight.Bold).fontColor(Colors.text)
+        Column({ space: Space.md }) {
+          Text(this.current.title).width('100%').fontSize(TypeSize.heading)
+            .fontWeight(TypeWeight.semibold).fontColor(Colors.ink)
           if (this.isSeries()) {
             Text(timelineRepeatLabel(this.current.repeat ?? TimelineRepeat.None) + '重复')
-              .width('100%').fontSize(14).fontColor(Colors.subText)
+              .width('100%').fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft)
           }
           ForEach(this.tags.filter((tag: TimelineTag) => tag.id === this.current.tagId), (tag: TimelineTag) => {
             this.TagLabel(tag)
           }, (tag: TimelineTag) => tag.id)
           Column() {
-            Row({ space: Space.large }) {
+            Row({ space: Space.lg }) {
               this.DetailTime('开始', this.current.startAt, 'start')
-              Text('→').fontSize(18).fontColor(Colors.subText)
+              Text('→').fontSize(16).fontColor(Colors.inkMuted)
               this.DetailTime('结束', this.current.endAt, 'end')
             }.width('100%')
-            Text(this.durationDescription()).fontSize(13).fontColor(Colors.subText)
+            Text(this.durationDescription()).fontSize(TypeSize.meta).fontColor(Colors.inkMuted).fontFeature(TABULAR_NUMS)
           }.width('100%').alignItems(HorizontalAlign.Start)
           if (this.current.reminderMinutes !== undefined) {
             Text('提醒 · ' + timelineReminderLabel(this.current.reminderMinutes))
-              .width('100%').fontSize(14).fontColor(Colors.subText)
+              .width('100%').fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft).fontFeature(TABULAR_NUMS)
           }
           if (this.current.note.trim().length > 0 || (this.current.attachments?.length ?? 0) > 0) {
-            Divider().color(Colors.border)
-            Text('备注').fontSize(13).fontColor(Colors.subText)
+            Divider().color(Colors.hairline)
+            Text('备注').fontSize(TypeSize.meta).fontColor(Colors.inkMuted)
             if (this.current.note.trim().length > 0) {
               TimelineLinkedNote({ value: this.current.note })
             }
@@ -549,33 +562,45 @@ export struct HomeScreen {
               TimelineAttachmentList({ items: this.current.attachments ?? [] })
             }
           }
-        }.width('100%').alignItems(HorizontalAlign.Start).padding({ bottom: Space.normal })
+        }.width('100%').alignItems(HorizontalAlign.Start).padding({ bottom: Space.md })
       }.layoutWeight(1).width('100%').align(Alignment.TopStart)
       if (this.errorMessage.length > 0) {
-        Text(this.errorMessage).width('100%').fontColor(Colors.danger).fontSize(14)
+        Text(this.errorMessage).width('100%').fontColor(Colors.red)
+          .fontSize(TypeSize.meta).fontWeight(TypeWeight.semibold)
       }
-      Divider().color(Colors.border)
+      Divider().color(Colors.hairline)
       Row() {
         if (this.confirmDelete) {
           Text('删除这段日程？')
-            .fontSize(14).fontColor(Colors.text).layoutWeight(1)
-          Button('保留').fontColor(Colors.text).backgroundColor(Color.Transparent)
+            .fontSize(TypeSize.body).fontColor(Colors.ink).layoutWeight(1)
+          Button('保留').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
+            .fontSize(TypeSize.body).fontWeight(TypeWeight.regular)
+            .fontColor(Colors.inkSoft).backgroundColor(Color.Transparent).borderRadius(Radius.card)
+            .padding({ left: Space.sm, right: Space.sm })
             .onClick(() => { this.confirmDelete = false; this.errorMessage = ''; })
-          Button(this.saving ? '删除中' : '确认删除').fontColor(Color.White).backgroundColor(Colors.danger)
+          Button(this.saving ? '删除中' : '确认删除').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
+            .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.red).backgroundColor(Color.Transparent).borderRadius(Radius.card)
+            .padding({ left: Space.sm, right: Space.sm })
             .onClick(() => { this.deleteBlock(); })
         } else {
-          Button('删除日程').height(44).padding({ left: 0, right: Space.normal })
-            .backgroundColor(Color.Transparent).fontColor(Colors.danger).fontSize(14)
+          Button('删除日程').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
+            .padding({ left: 0, right: Space.md })
+            .backgroundColor(Color.Transparent).fontColor(Colors.red)
+            .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).borderRadius(Radius.card)
             .onClick(() => this.startDelete())
           Blank()
-          Button('收起').height(44).fontSize(14).fontColor(Colors.text).backgroundColor(Color.Transparent)
+          Button('收起').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
+            .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink).backgroundColor(Color.Transparent).borderRadius(Radius.card)
+            .padding({ left: Space.sm, right: 0 })
             .onClick(() => { this.showSheet = false; })
         }
-      }.width('100%').padding({ top: Space.tiny })
+      }.width('100%').padding({ top: Space.xs })
     }
     .enabled(!this.saving).alignItems(HorizontalAlign.Start).width('100%').height('100%')
-    .padding({ left: Space.section, right: Space.section, top: Space.tiny, bottom: Space.small })
-    .backgroundColor(Colors.surface)
+    .padding({ left: Space.page, right: Space.page, top: Space.xs, bottom: Space.sm })
+    .backgroundColor(Colors.card)
   }
 
   private durationDescription(): string {
@@ -602,18 +627,21 @@ export struct HomeScreen {
   }
 
   @Builder
-  private HeaderButton(glyph: HomeGlyph, label: string, action: () => void, enabled: boolean = true) {
-    Button({ type: ButtonType.Circle }) {
-      HomeIcon({ glyph: glyph })
-    }.width(44).height(44).padding(0).backgroundColor(Color.Transparent)
+  private HeaderButton(glyph: HomeGlyph, label: string, action: () => void, enabled: boolean = true, primary: boolean = false) {
+    Button({ type: ButtonType.Normal }) {
+      HomeIcon({ glyph: glyph, ink: primary ? Colors.onRed : Colors.ink, iconSize: 20 })
+    }.width(40).height(40).padding(0)
+    .backgroundColor(primary ? Colors.red : Color.Transparent)
+    .borderRadius(Radius.card)
+    .opacity(enabled ? 1 : 0.4)
     .accessibilityText(label).enabled(enabled).onClick(() => action())
   }
 
   @Builder
   private Header() {
-    Row() {
+    Row({ space: Space.xs }) {
       Text(this.tab === HomeTab.Settings ? '设置' : this.greeting)
-        .layoutWeight(1).fontSize(27).fontWeight(FontWeight.Bold).fontColor(Colors.text)
+        .layoutWeight(1).fontSize(TypeSize.display).fontWeight(TypeWeight.semibold).fontColor(Colors.ink)
       if (this.tab !== HomeTab.Settings) {
         this.HeaderButton(HomeGlyph.Hint, '操作提示', () => {
           this.getUIContext().getPromptAction().showToast({ message: this.tab === HomeTab.Cards ?
@@ -626,23 +654,33 @@ export struct HomeScreen {
         this.HeaderButton(HomeGlyph.Add, this.tab === HomeTab.Timeline ? '添加日程' : '新建事项', () => {
           if (this.tab === HomeTab.Timeline) this.createBlock();
           else router.pushUrl({ url: 'pages/CreateMatter' });
-        }, !MatterServices.isPreview() && (this.tab !== HomeTab.Timeline || (!this.loadError && !this.saving)))
+        }, !MatterServices.isPreview() && (this.tab !== HomeTab.Timeline || (!this.loadError && !this.saving)), true)
       }
-    }.width('100%').height(HOME_HEADER_HEIGHT).padding({ left: Space.large, right: Space.small }).backgroundColor(Colors.surface)
+    }.width('100%').height(HOME_HEADER_HEIGHT).padding({ left: Space.page, right: Space.page }).backgroundColor(Colors.bg)
   }
 
   @Builder
   private TimelineBody() {
     if (this.reminderStatus.length > 0) {
-      Row({ space: Space.small }) {
-        Text(this.reminderStatus).fontSize(13).fontColor(Colors.subText).layoutWeight(1)
-        Button('同步提醒').height(36).padding({ left: Space.small, right: Space.small })
-          .backgroundColor(Color.Transparent).fontColor(Colors.primary).onClick(() => { this.syncReminders(true); })
-      }.width('100%').padding({ left: Space.normal, right: Space.small })
+      Row({ space: Space.sm }) {
+        Text(this.reminderStatus).fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft).layoutWeight(1)
+        Button('同步提醒').type(ButtonType.Normal).constraintSize({ minHeight: 40 })
+          .padding({ left: Space.sm, right: Space.sm })
+          .backgroundColor(Color.Transparent).fontSize(TypeSize.bodySmall)
+          .fontWeight(TypeWeight.semibold).fontColor(Colors.ink).borderRadius(Radius.card)
+          .onClick(() => { this.syncReminders(true); })
+      }.width('100%').padding({ left: Space.page, right: Space.page })
     }
     if (this.loadError) {
-      Text('日程读取失败（' + this.loadError + '）').fontColor(Colors.danger).margin(Space.large)
-      Button('重新读取').onClick(() => { this.load(); if (!this.loadError) this.syncReminders(); })
+      Column({ space: Space.sm }) {
+        Text('日程读取失败（' + this.loadError + '）').fontSize(TypeSize.bodySmall)
+          .fontWeight(TypeWeight.semibold).fontColor(Colors.red)
+        Button('重新读取').type(ButtonType.Normal).constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink).backgroundColor(Colors.wash).borderRadius(Radius.card)
+          .padding({ left: Space.lg, right: Space.lg })
+          .onClick(() => { this.load(); if (!this.loadError) this.syncReminders(); })
+      }.width('100%').alignItems(HorizontalAlign.Start).padding(Space.page)
     } else {
       Column() {
         TimelineGrid({ day: this.day, today: this.today, blocks: this.blocks, tags: this.tags, focusAt: this.focusAt,
@@ -681,21 +719,31 @@ export struct HomeScreen {
               .visibility(this.tab === HomeTab.Cards && !this.matterReadError && !this.matterLoading ?
                 Visibility.Visible : Visibility.None)
             if (this.tab === HomeTab.Cards && (this.matterReadError || this.matterLoading)) {
-              Column({ space: Space.normal }) {
-                Text(this.matterLoading ? '正在读取事项' : this.matterReadError).fontColor(Colors.subText)
+              Column({ space: Space.md }) {
+                Text(this.matterLoading ? '正在读取…' : this.matterReadError)
+                  .fontSize(TypeSize.bodySmall)
+                  .fontColor(this.matterLoading ? Colors.inkMuted : Colors.red)
                 if (this.matterReadError && !this.matterLoading) {
-                  Button('重新读取').onClick(() => this.loadMatters())
+                  Button('重新读取').type(ButtonType.Normal).constraintSize({ minHeight: 40 })
+                    .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
+                    .fontColor(Colors.ink).backgroundColor(Colors.wash).borderRadius(Radius.card)
+                    .padding({ left: Space.lg, right: Space.lg })
+                    .onClick(() => this.loadMatters())
                 }
-              }.width('100%').padding(Space.large)
+              }.width('100%').alignItems(HorizontalAlign.Start).padding(Space.page)
             }
             if (this.tab === HomeTab.Timeline) {
               Column() { this.TimelineBody() }.width('100%').height('100%').alignItems(HorizontalAlign.Start)
             } else if (this.tab === HomeTab.Settings) {
               Column() {
-                Button('桌面服务卡片').fontSize(16).fontColor(Colors.text)
-                  .backgroundColor(Colors.surface).borderRadius(Radius.normal)
+                Button('桌面服务卡片').type(ButtonType.Normal).constraintSize({ minHeight: 44 })
+                  .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).fontColor(Colors.ink)
+                  .backgroundColor(Colors.card).borderRadius(Radius.card)
+                  .border({ width: 1, color: Colors.hairline })
+                  .padding({ left: Space.lg, right: Space.lg })
+                  .opacity(MatterServices.isPreview() ? 0.4 : 1)
                   .enabled(!MatterServices.isPreview()).onClick(() => router.pushUrl({ url: 'pages/WidgetPreview' }))
-              }.width('100%').height('100%').alignItems(HorizontalAlign.Start).padding(Space.large)
+              }.width('100%').height('100%').alignItems(HorizontalAlign.Start).padding(Space.page)
             }
           }.width('100%').layoutWeight(1).clip(true)
           .accessibilityLevel(this.calendarLevel === 2 && this.tab !== HomeTab.Settings ? 'no-hide-descendants' : 'auto')
@@ -707,7 +755,7 @@ export struct HomeScreen {
           } }).margin({ bottom: DOCK_MARGIN })
         }
       }.width('100%').layoutWeight(1).clip(true)
-    }.height('100%').width('100%').backgroundColor(this.tab === HomeTab.Timeline ? Colors.surface : Colors.page)
+    }.height('100%').width('100%').backgroundColor(Colors.bg)
     .clip(true)
     .onSizeChange((_old: SizeOptions, size: SizeOptions) => {
       this.contentHeight = Math.max(0, Number(size.height) - HOME_HEADER_HEIGHT);

@@ -1,4 +1,4 @@
-import { Colors, Radius, Space } from '../common/Theme';
+import { Colors, Radius, Space, TABULAR_NUMS, TypeSize, TypeWeight } from '../common/Theme';
 import { formatDate, pad2 } from '../common/DateFormat';
 import { TimelineAttachment, TimelineBlock, TimelineRepeat, timelineRepeatLabel, TimelineTag,
   TIMELINE_REMINDER_MINUTES, timelineReminderLabel } from '../contracts/TimelineService';
@@ -219,40 +219,43 @@ export struct TimelineEditor {
         ForEach(REPEAT_OPTIONS, (option: TimelineRepeat) => {
           Button({ type: ButtonType.Normal }) {
             Row() {
-              Text(timelineRepeatLabel(option)).layoutWeight(1).fontSize(15).fontColor(Colors.text);
+              Text(timelineRepeatLabel(option)).layoutWeight(1).fontSize(TypeSize.body)
+                .fontWeight(option === this.repeat ? TypeWeight.semibold : TypeWeight.regular)
+                .fontColor(option === this.repeat ? Colors.ink : Colors.inkSoft);
               if (option === this.repeat) {
-                Text('✓').fontSize(15).fontColor(Colors.primary);
+                Text('✓').fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).fontColor(Colors.ink);
               }
             }.width('100%');
-          }.width('100%').height(44).padding({ left: Space.normal, right: Space.normal })
-          .backgroundColor(Color.Transparent)
+          }.width('100%').height(44).padding({ left: Space.md, right: Space.md })
+          .backgroundColor(option === this.repeat ? Colors.wash : Color.Transparent)
+          .borderRadius(Radius.card)
           .accessibilityText(timelineRepeatLabel(option) + (option === this.repeat ? '，已选中' : ''))
           .onClick(() => { this.repeat = option; this.picker = Picker.None; });
         }, (option: TimelineRepeat) => option);
-      }.width('100%');
-    }.width(170).constraintSize({ maxHeight: 220 });
+      }.width('100%').padding(Space.xs);
+    }.width(176).constraintSize({ maxHeight: 224 });
   }
 
   @Builder
   private RepeatField() {
     Row() {
-      Text('重复').layoutWeight(1).fontSize(14).fontColor(Colors.subText);
-      Button() {
-        Row({ space: Space.small }) {
-          Text(timelineRepeatLabel(this.repeat)).fontSize(15).fontColor(Colors.text);
-          Text('▾').fontSize(12).fontColor(Colors.subText);
+      Text('重复').layoutWeight(1).fontSize(TypeSize.body).fontColor(Colors.inkSoft);
+      Button({ type: ButtonType.Normal }) {
+        Row({ space: Space.sm }) {
+          Text(timelineRepeatLabel(this.repeat)).fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).fontColor(Colors.ink);
+          Text('▾').fontSize(TypeSize.meta).fontColor(Colors.inkMuted);
         }
-      }.height(44).padding({ left: Space.small, right: Space.small }).backgroundColor(Color.Transparent)
+      }.height(44).padding({ left: Space.sm, right: Space.sm }).backgroundColor(Color.Transparent).borderRadius(Radius.card)
       .accessibilityText('重复，' + timelineRepeatLabel(this.repeat))
       .onClick(() => this.openPicker(Picker.Repeat, Endpoint.Start))
       .bindPopup(this.picker === Picker.Repeat, {
         builder: this.RepeatOptions, placement: Placement.Bottom, enableArrow: false,
-        popupColor: Colors.surface, autoCancel: true,
+        popupColor: Colors.card, autoCancel: true,
         onStateChange: (event) => { if (!event.isVisible && this.picker === Picker.Repeat) this.picker = Picker.None; }
       });
     }.width('100%');
     if (this.repeatHint().length > 0) {
-      Text(this.repeatHint()).width('100%').fontSize(13).fontColor(Colors.subText);
+      Text(this.repeatHint()).width('100%').fontSize(TypeSize.meta).fontColor(Colors.inkMuted);
     }
   }
 
@@ -263,37 +266,40 @@ export struct TimelineEditor {
         ForEach(REMINDER_OPTIONS, (minutes: number) => {
           Button({ type: ButtonType.Normal }) {
             Row() {
-              Text(timelineReminderLabel(minutes < 0 ? undefined : minutes)).layoutWeight(1).fontSize(15)
-                .fontColor(Colors.text);
+              Text(timelineReminderLabel(minutes < 0 ? undefined : minutes)).layoutWeight(1).fontSize(TypeSize.body)
+                .fontWeight(minutes === this.reminder ? TypeWeight.semibold : TypeWeight.regular)
+                .fontColor(minutes === this.reminder ? Colors.ink : Colors.inkSoft);
               if (minutes === this.reminder) {
-                Text('✓').fontSize(15).fontColor(Colors.primary);
+                Text('✓').fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).fontColor(Colors.ink);
               }
             }.width('100%');
-          }.width('100%').height(44).padding({ left: Space.normal, right: Space.normal })
-          .backgroundColor(Color.Transparent)
+          }.width('100%').height(44).padding({ left: Space.md, right: Space.md })
+          .backgroundColor(minutes === this.reminder ? Colors.wash : Color.Transparent)
+          .borderRadius(Radius.card)
           .accessibilityText(timelineReminderLabel(minutes < 0 ? undefined : minutes) +
             (minutes === this.reminder ? '，已选中' : ''))
           .onClick(() => { this.reminder = minutes; this.picker = Picker.None; });
         }, (minutes: number) => minutes.toString());
-      }.width('100%');
-    }.width(170).constraintSize({ maxHeight: 264 });
+      }.width('100%').padding(Space.xs);
+    }.width(176).constraintSize({ maxHeight: 268 });
   }
 
   @Builder
   private ReminderField() {
     Row() {
-      Text('提醒').layoutWeight(1).fontSize(14).fontColor(Colors.subText);
-      Button() {
-        Row({ space: Space.small }) {
-          Text(timelineReminderLabel(this.reminder < 0 ? undefined : this.reminder)).fontSize(15).fontColor(Colors.text);
-          Text('▾').fontSize(12).fontColor(Colors.subText);
+      Text('提醒').layoutWeight(1).fontSize(TypeSize.body).fontColor(Colors.inkSoft);
+      Button({ type: ButtonType.Normal }) {
+        Row({ space: Space.sm }) {
+          Text(timelineReminderLabel(this.reminder < 0 ? undefined : this.reminder)).fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.semibold).fontColor(Colors.ink);
+          Text('▾').fontSize(TypeSize.meta).fontColor(Colors.inkMuted);
         }
-      }.height(44).padding({ left: Space.small, right: Space.small }).backgroundColor(Color.Transparent)
+      }.height(44).padding({ left: Space.sm, right: Space.sm }).backgroundColor(Color.Transparent).borderRadius(Radius.card)
       .accessibilityText('提醒，' + timelineReminderLabel(this.reminder < 0 ? undefined : this.reminder))
       .onClick(() => this.openPicker(Picker.Reminder, Endpoint.Start))
       .bindPopup(this.picker === Picker.Reminder, {
         builder: this.ReminderOptions, placement: Placement.Bottom, enableArrow: false,
-        popupColor: Colors.surface, autoCancel: true,
+        popupColor: Colors.card, autoCancel: true,
         onStateChange: (event) => { if (!event.isVisible && this.picker === Picker.Reminder) this.picker = Picker.None; }
       });
     }.width('100%');
@@ -302,33 +308,33 @@ export struct TimelineEditor {
   @Builder
   private TimeRow(endpoint: Endpoint) {
     Row() {
-      Text(this.labelOf(endpoint)).fontSize(15).fontColor(Colors.text);
+      Text(this.labelOf(endpoint)).fontSize(TypeSize.body).fontColor(Colors.inkSoft);
       Blank();
-      Button(this.dayLabel(this.endpointTime(endpoint)))
-        .height(44).padding({ left: 4, right: 4 }).fontSize(14).fontColor(Colors.subText)
-        .backgroundColor(Color.Transparent)
+      Button(this.dayLabel(this.endpointTime(endpoint)), { type: ButtonType.Normal })
+        .height(44).padding({ left: Space.xs, right: Space.xs }).fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft)
+        .backgroundColor(Color.Transparent).borderRadius(Radius.card)
         .accessibilityText(`${this.labelOf(endpoint)}日期 ${formatDate(this.endpointTime(endpoint))}`)
         .onClick(() => this.openPicker(Picker.Month, endpoint));
-      Button(this.clockLabel(this.endpointTime(endpoint)))
-        .height(44).padding({ left: Space.small, right: Space.small })
-        .borderRadius(Radius.small).fontSize(20).fontWeight(FontWeight.Medium).fontColor(Colors.text)
-        .backgroundColor(this.picker === Picker.Clock && this.endpoint === endpoint ? Colors.surfaceSoft : Color.Transparent)
+      Button(this.clockLabel(this.endpointTime(endpoint)), { type: ButtonType.Normal })
+        .height(44).padding({ left: Space.sm, right: Space.sm })
+        .borderRadius(Radius.card).fontSize(20).fontWeight(TypeWeight.semibold).fontColor(Colors.ink)
+        .backgroundColor(this.picker === Picker.Clock && this.endpoint === endpoint ? Colors.wash : Color.Transparent)
         .accessibilityText(`${this.labelOf(endpoint)}时刻 ${this.clockLabel(this.endpointTime(endpoint))}`)
         .onClick(() => this.openPicker(Picker.Clock, endpoint));
     }.width('100%');
     if (this.picker === Picker.Clock && this.endpoint === endpoint) {
       Stack({ alignContent: Alignment.Center }) {
         Row()
-          .width('100%').height(CLOCK_SELECTION_HEIGHT).borderRadius(CLOCK_SELECTION_HEIGHT / 2)
-          .backgroundColor('#F0F2F5').hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
+          .width('100%').height(CLOCK_SELECTION_HEIGHT).borderRadius(Radius.card)
+          .backgroundColor(Colors.wash).hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
         TimePicker({ selected: new Date(this.endpointTime(endpoint)) })
           .key(endpoint === Endpoint.Start ? 'timeline-start-clock' : 'timeline-end-clock')
           .width(CLOCK_COLUMNS_WIDTH).constraintSize({ maxWidth: '100%' }).height(CLOCK_HEIGHT)
           .backgroundColor(Color.Transparent).useMilitaryTime(true)
           .dateTimeOptions({ hour: '2-digit', minute: '2-digit' })
-          .selectedTextStyle({ color: Colors.text, font: { size: 23, weight: FontWeight.Medium } })
-          .textStyle({ color: Colors.subText, font: { size: 18 } })
-          .disappearTextStyle({ color: '#98A2B3', font: { size: 14 } })
+          .selectedTextStyle({ color: Colors.ink, font: { size: 22, weight: TypeWeight.semibold } })
+          .textStyle({ color: Colors.inkSoft, font: { size: 17 } })
+          .disappearTextStyle({ color: Colors.inkMuted, font: { size: 13 } })
           .onChange((result: TimePickerResult) => this.pickTime(endpoint, result));
       }
       .width(CLOCK_WIDTH).constraintSize({ maxWidth: '100%' }).height(CLOCK_HEIGHT);
@@ -338,18 +344,23 @@ export struct TimelineEditor {
   @Builder
   private Toolbar() {
     Row() {
-      Button('取消').fontSize(14).fontColor(Colors.subText).backgroundColor(Color.Transparent)
+      Button('取消', { type: ButtonType.Normal }).constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body).fontWeight(TypeWeight.regular).fontColor(Colors.inkSoft)
+        .backgroundColor(Color.Transparent).borderRadius(Radius.card).padding({ left: Space.sm, right: Space.sm })
         .onClick(() => this.onCancel());
       Blank();
       Text(this.editing ? '编辑日程' : '新建日程')
-        .fontSize(16).fontWeight(FontWeight.Medium).fontColor(Colors.text);
+        .fontSize(TypeSize.title).fontWeight(TypeWeight.semibold).fontColor(Colors.ink);
       Blank();
-      Button(this.saving ? '保存中' : '保存').fontSize(14).height(34)
-        .backgroundColor(Colors.text).fontColor(Color.White).borderRadius(Radius.normal)
+      Button(this.saving ? '保存中' : '保存', { type: ButtonType.Normal }).constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
+        .backgroundColor(Colors.red).fontColor(Colors.onRed).borderRadius(Radius.card)
+        .padding({ left: Space.lg, right: Space.lg })
+        .opacity(this.saving ? 0.4 : 1)
         .onClick(() => this.submit());
     }
     .width('100%')
-    .padding({ left: Space.small, right: Space.normal, top: Space.tiny, bottom: Space.tiny });
+    .padding({ left: Space.md, right: Space.page, top: Space.sm, bottom: Space.sm });
   }
 
   private editNote(): void {
@@ -360,7 +371,7 @@ export struct TimelineEditor {
   private colorNote(parts: TimelineNotePart[]): void {
     for (const part of parts) {
       this.noteController.updateSpanStyle({ start: part.start, end: part.start + part.text.length,
-        textStyle: { fontColor: part.href ? Colors.primary : Colors.text, fontSize: 16 } });
+        textStyle: { fontColor: Colors.ink, fontSize: 14 } });
     }
   }
 
@@ -389,12 +400,12 @@ export struct TimelineEditor {
     } else {
       RichEditor({ controller: this.noteController })
         .id('timeline-note-editor').width('100%').constraintSize({ minHeight: 52 })
-        .placeholder(this.noteFocused ? '' : '添加备注', { font: { size: 16 } })
-        .accessibilityText('备注').padding(0).backgroundColor(Color.Transparent).borderRadius(0)
+        .placeholder(this.noteFocused ? '' : '添加备注', { fontColor: Colors.inkMuted, font: { size: 14 } })
+        .accessibilityText('备注').padding(Space.sm).backgroundColor(Colors.wash).borderRadius(Radius.card)
         .onReady(() => {
-          this.noteController.setTypingStyle({ fontColor: Colors.text, fontSize: 16 });
+          this.noteController.setTypingStyle({ fontColor: Colors.ink, fontSize: 14 });
           if (this.noteDraft.length > 0) {
-            this.noteController.addTextSpan(this.noteDraft, { style: { fontColor: Colors.text, fontSize: 16 } });
+            this.noteController.addTextSpan(this.noteDraft, { style: { fontColor: Colors.ink, fontSize: 14 } });
             if (this.noteHasLinks) this.colorNote(timelineNoteParts(this.noteDraft));
           }
           if (this.requestNoteFocus) {
@@ -417,23 +428,40 @@ export struct TimelineEditor {
 
   @Builder
   private Fields() {
-    Column({ space: Space.small }) {
-      TextInput({ text: this.titleDraft, placeholder: this.titleFocused ? '' : '日程名称', controller: this.titleController })
-        .width('100%').height(48).padding(0).fontSize(22).fontColor(Colors.text)
-        .accessibilityText('日程名称')
-        .backgroundColor(Color.Transparent).borderRadius(0)
-        .onFocus(() => { this.titleFocused = true; this.picker = Picker.None; })
-        .onBlur(() => { this.titleFocused = false; })
-        .onChange((value: string) => { this.titleDraft = value; this.validation = ''; });
-      Divider().color(Colors.border);
+    Column({ space: Space.sm }) {
+      Column() {
+        TextInput({ text: this.titleDraft, placeholder: this.titleFocused ? '' : '日程名称', controller: this.titleController })
+          .width('100%').constraintSize({ minHeight: 48 }).padding({ left: Space.sm, right: Space.sm })
+          .fontSize(TypeSize.heading).fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink).placeholderColor(Colors.inkMuted).caretColor(Colors.red)
+          .accessibilityText('日程名称')
+          .backgroundColor(Color.Transparent).borderRadius(0)
+          .onFocus(() => { this.titleFocused = true; this.picker = Picker.None; })
+          .onBlur(() => { this.titleFocused = false; })
+          .onChange((value: string) => { this.titleDraft = value; this.validation = ''; });
+        Column()
+          .width('100%')
+          .height(2)
+          .backgroundColor(this.validation.includes('名称')
+            ? Colors.red
+            : this.titleFocused ? Colors.ink : Color.Transparent);
+      }
+      .width('100%')
+      .backgroundColor(Colors.wash)
+      .borderRadius(Radius.card)
+      .clip(true);
+
+      Divider().color(Colors.hairline);
       Column() {
         this.TimeRow(Endpoint.Start);
         this.TimeRow(Endpoint.End);
       }.width('100%');
       Text(this.durationLabel())
-        .width('100%').textAlign(TextAlign.End).fontSize(13)
-        .fontColor(this.endAt > this.startAt ? Colors.subText : Colors.danger);
-      Divider().color(Colors.border);
+        .width('100%').textAlign(TextAlign.End).fontSize(TypeSize.meta)
+        .fontWeight(this.endAt > this.startAt ? TypeWeight.regular : TypeWeight.semibold)
+        .fontColor(this.endAt > this.startAt ? Colors.inkMuted : Colors.red)
+        .fontFeature(TABULAR_NUMS);
+      Divider().color(Colors.hairline);
       TimelineTagPicker({
         tags: this.tags, selectedId: this.tagId,
         onSelect: (id: string) => { this.tagId = id; },
@@ -447,13 +475,17 @@ export struct TimelineEditor {
       this.RepeatField();
       this.ReminderField();
       Row() {
-        Text('备注').layoutWeight(1).fontSize(14).fontColor(Colors.subText);
+        Text('备注').layoutWeight(1).fontSize(TypeSize.body).fontColor(Colors.inkSoft);
         if (this.previewNote) {
-          Button('编辑备注').height(40).fontSize(14).padding({ left: Space.small, right: Space.small })
-            .fontColor(Colors.primary).backgroundColor(Color.Transparent).onClick(() => this.editNote());
+          Button('编辑备注', { type: ButtonType.Normal }).constraintSize({ minHeight: 40 })
+            .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).padding({ left: Space.sm, right: Space.sm })
+            .fontColor(Colors.ink).backgroundColor(Color.Transparent).borderRadius(Radius.card)
+            .onClick(() => this.editNote());
         } else if (this.noteHasLinks) {
-          Button('完成').height(40).fontSize(14).padding({ left: Space.small, right: Space.small })
-            .accessibilityText('完成备注编辑').fontColor(Colors.primary).backgroundColor(Color.Transparent)
+          Button('完成', { type: ButtonType.Normal }).constraintSize({ minHeight: 40 })
+            .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).padding({ left: Space.sm, right: Space.sm })
+            .accessibilityText('完成备注编辑').fontColor(Colors.ink).backgroundColor(Color.Transparent)
+            .borderRadius(Radius.card)
             .onClick(() => { this.noteController.stopEditing(); this.previewNote = true; });
         }
         TimelineAttachmentButton({
@@ -472,7 +504,7 @@ export struct TimelineEditor {
       }
     }
     .width('100%')
-    .padding({ left: Space.large, right: Space.large, bottom: Space.large });
+    .padding({ left: Space.page, right: Space.page, bottom: Space.lg });
   }
 
   @Builder
@@ -488,15 +520,15 @@ export struct TimelineEditor {
         this.Toolbar();
         if (this.validation.length > 0 || this.errorMessage.length > 0) {
           Text(this.validation.length > 0 ? this.validation : this.errorMessage)
-            .width('100%').padding({ left: Space.large, right: Space.large })
-            .fontSize(13).fontColor(Colors.danger);
+            .width('100%').padding({ left: Space.page, right: Space.page, bottom: Space.xs })
+            .fontSize(TypeSize.meta).fontWeight(TypeWeight.semibold).fontColor(Colors.red);
         }
         this.Fields();
       }.width('100%');
     }
     .align(Alignment.Top).width('100%').height('100%')
     .enabled(!this.saving && !this.importing)
-    .backgroundColor(Colors.surface);
+    .backgroundColor(Colors.card);
   }
 
   build() {

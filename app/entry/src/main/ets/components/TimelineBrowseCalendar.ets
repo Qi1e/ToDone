@@ -1,4 +1,4 @@
-import { Colors, Space } from '../common/Theme';
+import { Colors, Radius, Space, TABULAR_NUMS, TypeSize, TypeWeight } from '../common/Theme';
 import { TimelineBlock, TimelineTag } from '../contracts/TimelineService';
 import { localDayStart, weekPageOffset } from '../domain/TimelineLayout';
 import { monthStart, monthWeekCount, TimelineCalendarRows, TIMELINE_WEEKDAYS } from './TimelineDatePicker';
@@ -65,39 +65,43 @@ export struct TimelineBrowseCalendar {
   build() {
     Column() {
       Row() {
-        Button() {
-          Row({ space: Space.tiny }) {
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: Space.xs }) {
             Text(new Date(this.month).getFullYear() + '年' + (new Date(this.month).getMonth() + 1) + '月')
-              .fontSize(16).fontWeight(FontWeight.Medium).fontColor(Colors.text);
-            Text('▾').fontSize(12).fontColor(Colors.subText).rotate({ angle: 180 * this.progress });
+              .fontSize(TypeSize.title).fontWeight(TypeWeight.semibold).fontColor(Colors.ink).fontFeature(TABULAR_NUMS);
+            Text('▾').fontSize(TypeSize.meta).fontColor(Colors.inkMuted).rotate({ angle: 180 * this.progress });
           }
-        }.height(BROWSE_TITLE_HEIGHT).padding(0).backgroundColor(Color.Transparent)
+        }.height(BROWSE_TITLE_HEIGHT).padding(0).backgroundColor(Color.Transparent).borderRadius(Radius.card)
         .accessibilityText(this.detail > 0 ? '返回月历预览' : this.expanded ? '返回周视图' : '展开月历').onClick(() => this.onToggle());
         if (this.expanded) {
           Stack() {
-            Button('全屏月历').height(BROWSE_TITLE_HEIGHT).width('100%').padding(0)
-              .fontSize(14).fontColor(Colors.primary).backgroundColor(Color.Transparent)
+            Button('全屏月历', { type: ButtonType.Normal }).height(BROWSE_TITLE_HEIGHT).width('100%').padding(0)
+              .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).fontColor(Colors.ink)
+              .backgroundColor(Color.Transparent).borderRadius(Radius.card)
               .opacity(Math.max(0, 1 - 2 * this.detail)).enabled(this.detail === 0)
               .accessibilityLevel(this.detail === 0 ? 'auto' : 'no-hide-descendants')
               .onClick(() => this.onOpenFullCalendar());
-            Button('回今天').height(BROWSE_TITLE_HEIGHT).width('100%').padding(0)
-              .fontSize(14).fontColor(Colors.primary).backgroundColor(Color.Transparent)
+            Button('回今天', { type: ButtonType.Normal }).height(BROWSE_TITLE_HEIGHT).width('100%').padding(0)
+              .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).fontColor(Colors.ink)
+              .backgroundColor(Color.Transparent).borderRadius(Radius.card)
               .opacity(Math.max(0, 2 * this.detail - 1)).hitTestBehavior(this.detail === 1 ? HitTestMode.Default : HitTestMode.None)
               .accessibilityLevel(this.detail === 1 ? 'auto' : 'no-hide-descendants').onClick(() => this.onToday());
           }.width(76).height(BROWSE_TITLE_HEIGHT);
         }
         Blank();
         Row() {
-          Button('‹').width(36).height(BROWSE_TITLE_HEIGHT).padding(0).fontSize(22).fontColor(Colors.text)
+          Button('‹', { type: ButtonType.Normal }).width(40).height(BROWSE_TITLE_HEIGHT).padding(0)
+            .fontSize(20).fontColor(Colors.ink).borderRadius(Radius.card)
             .backgroundColor(Color.Transparent).accessibilityText('上个月').onClick(() => this.controller.showPrevious());
-          Button('›').width(36).height(BROWSE_TITLE_HEIGHT).padding(0).fontSize(22).fontColor(Colors.text)
+          Button('›', { type: ButtonType.Normal }).width(40).height(BROWSE_TITLE_HEIGHT).padding(0)
+            .fontSize(20).fontColor(Colors.ink).borderRadius(Radius.card)
             .backgroundColor(Color.Transparent).accessibilityText('下个月').onClick(() => this.controller.showNext());
         }.opacity(this.progress).enabled(this.progress === 1 && this.expanded)
         .accessibilityLevel(this.expanded ? 'auto' : 'no-hide-descendants');
-      }.width('100%').height(BROWSE_TITLE_HEIGHT).padding({ left: Space.small, right: Space.small });
+      }.width('100%').height(BROWSE_TITLE_HEIGHT).padding({ left: Space.page, right: Space.page });
       Row() {
         ForEach(TIMELINE_WEEKDAYS, (name: string) => {
-          Text(name).layoutWeight(1).textAlign(TextAlign.Center).fontSize(12).fontColor(Colors.subText);
+          Text(name).layoutWeight(1).textAlign(TextAlign.Center).fontSize(TypeSize.meta).fontColor(Colors.inkMuted);
         }, (name: string) => name);
       }.width('100%').height(BROWSE_WEEKDAYS_HEIGHT);
       Scroll(this.rowsScroller) {

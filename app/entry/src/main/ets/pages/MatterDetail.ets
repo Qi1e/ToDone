@@ -4,7 +4,16 @@ import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
 import { MatterServices } from '../application/MatterServices';
 import { formatDateTime } from '../common/DateFormat';
-import { Colors, Radius, Space } from '../common/Theme';
+import {
+  Colors,
+  Radius,
+  Space,
+  TABULAR_NUMS,
+  TypeSize,
+  TypeWeight,
+  resolveClusterColor
+} from '../common/Theme';
+import { ModuleIcon } from '../components/ModuleIcon';
 import { moduleLabel } from '../model/Defaults';
 import {
   ChecklistItem,
@@ -103,6 +112,19 @@ struct MatterDetail {
     return deadline ? dateSummary(deadline) : '未设置日期';
   }
 
+  private isDeadlineUrgent(): boolean {
+    const text = this.deadlineDisplayText();
+    return text.includes('已逾期') || text.includes('今天截止');
+  }
+
+  private currentClusterColor(): Resource | undefined {
+    const matter = this.currentMatter();
+    if (!matter?.clusterId) {
+      return undefined;
+    }
+    return resolveClusterColor(this.store.clusterColor(matter.clusterId));
+  }
+
   private async perform(write: () => Promise<void>): Promise<void> {
     if (this.savingMatter) return;
     this.savingMatter = true;
@@ -118,56 +140,123 @@ struct MatterDetail {
   build() {
     Navigation() {
       Scroll() {
-        Column({ space: Space.large }) {
+        Column({ space: Space.lg }) {
           this.TopBar();
 
           if (this.readError) {
-            Text(this.readError).fontColor(Colors.danger);
-            Button('重新读取').onClick(() => this.load());
+            Column({ space: Space.sm }) {
+              Text(this.readError)
+                .fontSize(TypeSize.bodySmall)
+                .fontWeight(TypeWeight.semibold)
+                .fontColor(Colors.red);
+              Button('重新读取')
+                .type(ButtonType.Normal)
+                .constraintSize({ minHeight: 40 })
+                .fontSize(TypeSize.body)
+                .fontWeight(TypeWeight.semibold)
+                .fontColor(Colors.ink)
+                .backgroundColor(Colors.wash)
+                .borderRadius(Radius.card)
+                .padding({ left: Space.lg, right: Space.lg })
+                .onClick(() => this.load());
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start);
           } else if (this.currentMatter()) {
-            Text(this.titleInput).fontSize(22)
-            if (this.descriptionInput) { Text(this.descriptionInput) }
-            Button('编辑事项').onClick(() => {
-              router.pushUrl({ url: 'pages/CreateMatter', params: { matterId: this.matterId } });
-            })
+            Column({ space: Space.sm }) {
+              Row({ space: Space.sm }) {
+                if (this.currentClusterColor()) {
+                  Column()
+                    .width(8)
+                    .height(8)
+                    .borderRadius(4)
+                    .backgroundColor(this.currentClusterColor() ?? Colors.ink);
+                }
+                Text(this.titleInput)
+                  .fontSize(TypeSize.heading)
+                  .fontWeight(TypeWeight.semibold)
+                  .fontColor(Colors.ink)
+                  .layoutWeight(1);
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Center);
+
+              if (this.descriptionInput) {
+                Text(this.descriptionInput)
+                  .fontSize(TypeSize.bodySmall)
+                  .fontWeight(TypeWeight.regular)
+                  .fontColor(Colors.inkSoft)
+                  .width('100%');
+              }
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start);
+
             this.EnabledModules();
           } else {
             Text('没有找到这个事项')
-              .fontSize(18)
-              .fontColor(Colors.subText)
-              .padding(Space.large);
+              .fontSize(TypeSize.bodySmall)
+              .fontWeight(TypeWeight.regular)
+              .fontColor(Colors.inkSoft)
+              .padding({ top: Space.xl, bottom: Space.xl });
           }
         }
         .width('100%')
-        .padding(Space.large);
+        .padding({
+          left: Space.page,
+          right: Space.page,
+          top: Space.lg,
+          bottom: Space.xl
+        });
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(Colors.page);
+      .scrollBar(BarState.Off)
+      .backgroundColor(Colors.bg);
     }
-    .title(this.titleInput.length > 0 ? this.titleInput : '事项')
+    .hideTitleBar(true)
     .mode(NavigationMode.Stack);
   }
 
   @Builder
   private TopBar() {
-    Row() {
+    Row({ space: Space.sm }) {
       Button('返回')
-        .fontSize(14)
-        .fontColor(Colors.primary)
-        .backgroundColor(Colors.primarySoft)
-        .borderRadius(Radius.normal)
+        .type(ButtonType.Normal)
+        .constraintSize({ minHeight: 44 })
+        .fontSize(TypeSize.body)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink)
+        .backgroundColor(Color.Transparent)
+        .borderRadius(Radius.card)
+        .padding({ left: 0, right: Space.md })
         .onClick(() => {
           router.back();
         });
       Text('详情')
-        .fontSize(24)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(Colors.text)
-        .margin({ left: Space.normal })
+        .fontSize(TypeSize.bodySmall)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkMuted)
         .layoutWeight(1);
+      if (this.currentMatter() && !this.readError) {
+        Button('编辑')
+          .type(ButtonType.Normal)
+          .constraintSize({ minHeight: 44 })
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.md, right: 0 })
+          .accessibilityText('编辑事项')
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/CreateMatter', params: { matterId: this.matterId } });
+          });
+      }
     }
-    .width('100%');
+    .width('100%')
+    .constraintSize({ minHeight: 48 })
+    .alignItems(VerticalAlign.Center);
   }
 
   @Builder
@@ -181,20 +270,19 @@ struct MatterDetail {
 
   @Builder
   private ModulePanel(type: ModuleType) {
-    Column({ space: Space.normal }) {
-      Row() {
-        Text(type === ModuleType.EventRecord ? (this.enabledModuleSnapshot.find((m: ModuleInstance) => m.moduleType === type)?.name || moduleLabel(type)) : moduleLabel(type))
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Colors.text)
+    Column({ space: Space.md }) {
+      Row({ space: Space.sm }) {
+        ModuleIcon({ moduleType: type, ink: Colors.inkSoft, iconSize: 18 });
+        Text(type === ModuleType.EventRecord
+          ? (this.enabledModuleSnapshot.find((m: ModuleInstance) => m.moduleType === type)?.name || moduleLabel(type))
+          : moduleLabel(type))
+          .fontSize(TypeSize.title)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink)
           .layoutWeight(1);
-        Text('信息')
-          .fontSize(12)
-          .fontColor(Colors.subText)
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-          .backgroundColor(Colors.surfaceSoft)
-          .borderRadius(Radius.small);
       }
+      .width('100%')
+      .alignItems(VerticalAlign.Center);
 
       if (type === ModuleType.EventRecord) {
         this.EventRecordModule();
@@ -212,20 +300,23 @@ struct MatterDetail {
         this.ChecklistModule();
       }
     }
-    .padding(Space.large)
-    .backgroundColor(Colors.surface)
-    .borderRadius(Radius.large)
-    .border({ width: 1, color: Colors.border });
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: Space.lg })
+    .border({ width: { top: 1 }, color: Colors.hairline });
   }
 
   @Builder
   private EventRecordModule() {
     Button('记录一次')
-      .height(42)
-      .fontSize(15)
-      .fontColor(Color.White)
-      .backgroundColor(Colors.primary)
-      .borderRadius(Radius.normal)
+      .type(ButtonType.Normal)
+      .constraintSize({ minHeight: 40 })
+      .fontSize(TypeSize.body)
+      .fontWeight(TypeWeight.semibold)
+      .fontColor(Colors.ink)
+      .backgroundColor(Colors.wash)
+      .borderRadius(Radius.card)
+      .padding({ left: Space.lg, right: Space.lg })
       .onClick(() => {
         this.perform(async (): Promise<void> => {
           await this.store.addEventRecord(this.matterId);
@@ -236,30 +327,57 @@ struct MatterDetail {
 
     ForEach(this.store.eventRecordsFor(this.matterId), (entry: EventRecordEntry) => {
       Text(formatDateTime(entry.timestamp))
-        .fontSize(14)
-        .fontColor(Colors.subText)
-        .padding({ top: 4, bottom: 4 });
+        .fontSize(TypeSize.body)
+        .fontWeight(TypeWeight.regular)
+        .fontColor(Colors.inkSoft)
+        .fontFeature(TABULAR_NUMS)
+        .width('100%')
+        .padding({ top: Space.xs, bottom: Space.xs });
     }, (entry: EventRecordEntry) => entry.id);
   }
 
   @Builder
   private CounterModule() {
-    Row({ space: Space.small }) {
-      Text(`今日 ${this.store.counterToday(this.matterId)}`)
-        .fontSize(16)
-        .fontColor(Colors.text)
-        .layoutWeight(1);
-      Text(`累计 ${this.store.counterTotal(this.matterId)}`)
-        .fontSize(16)
-        .fontColor(Colors.subText);
-    }
+    Row({ space: Space.section }) {
+      Column({ space: Space.xs }) {
+        Text('今日')
+          .fontSize(TypeSize.meta)
+          .fontWeight(TypeWeight.regular)
+          .fontColor(Colors.inkMuted);
+        Text(`${this.store.counterToday(this.matterId)}`)
+          .fontSize(TypeSize.figure)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink)
+          .fontFeature(TABULAR_NUMS);
+      }
+      .alignItems(HorizontalAlign.Start);
 
-    Row({ space: Space.small }) {
+      Column({ space: Space.xs }) {
+        Text('累计')
+          .fontSize(TypeSize.meta)
+          .fontWeight(TypeWeight.regular)
+          .fontColor(Colors.inkMuted);
+        Text(`${this.store.counterTotal(this.matterId)}`)
+          .fontSize(TypeSize.figure)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.inkSoft)
+          .fontFeature(TABULAR_NUMS);
+      }
+      .alignItems(HorizontalAlign.Start);
+    }
+    .width('100%');
+
+    Flex({ wrap: FlexWrap.Wrap }) {
       Button(`+${this.store.counterStep(this.matterId)}`)
-        .fontSize(15)
-        .fontColor(Color.White)
-        .backgroundColor(Colors.primary)
-        .borderRadius(Radius.normal)
+        .type(ButtonType.Normal)
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.lg, right: Space.lg })
+        .margin({ right: Space.sm, bottom: Space.sm })
         .onClick(() => {
           this.perform(async (): Promise<void> => {
             await this.store.addCounterEntry(this.matterId, this.store.counterStep(this.matterId));
@@ -268,10 +386,15 @@ struct MatterDetail {
           });
         });
       Button('+10')
-        .fontSize(15)
-        .fontColor(Color.White)
-        .backgroundColor(Colors.primary)
-        .borderRadius(Radius.normal)
+        .type(ButtonType.Normal)
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.lg, right: Space.lg })
+        .margin({ right: Space.sm, bottom: Space.sm })
         .onClick(() => {
           this.perform(async (): Promise<void> => {
             await this.store.addCounterEntry(this.matterId, 10);
@@ -280,10 +403,15 @@ struct MatterDetail {
           });
         });
       Button('今日一次')
-        .fontSize(15)
-        .fontColor(Colors.primary)
-        .backgroundColor(Colors.primarySoft)
-        .borderRadius(Radius.normal)
+        .type(ButtonType.Normal)
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.lg, right: Space.lg })
+        .margin({ right: Space.sm, bottom: Space.sm })
         .onClick(() => {
           this.perform(async (): Promise<void> => {
             await this.store.markDailyOnce(this.matterId);
@@ -292,22 +420,31 @@ struct MatterDetail {
           });
         });
     }
+    .width('100%');
 
-    Row({ space: Space.small }) {
+    Row({ space: Space.sm }) {
       TextInput({ placeholder: '自定义数值', text: this.customCounterInput })
-        .height(42)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.md, right: Space.md })
         .layoutWeight(1)
         .onChange((value: string) => {
           this.customCounterInput = value;
         });
       Button('增加')
-        .fontSize(15)
-        .fontColor(Color.White)
-        .backgroundColor(Colors.primary)
-        .borderRadius(Radius.normal)
+        .type(ButtonType.Normal)
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.lg, right: Space.lg })
         .onClick(() => {
           this.perform(async (): Promise<void> => {
             const parsed = Number(this.customCounterInput);
@@ -320,40 +457,59 @@ struct MatterDetail {
           });
         });
     }
+    .width('100%');
   }
 
   @Builder
   private DeadlineModule() {
     Text(this.deadlineDisplayText())
+      .fontSize(TypeSize.title)
+      .fontWeight(TypeWeight.semibold)
+      .fontColor(this.isDeadlineUrgent() ? Colors.red : Colors.ink)
+      .fontFeature(TABULAR_NUMS)
+      .width('100%');
   }
 
   @Builder
   private NoteModule() {
-    Text(this.noteInput)
+    Text(this.noteInput.length > 0 ? this.noteInput : '暂无备注')
+      .fontSize(TypeSize.body)
+      .fontWeight(TypeWeight.regular)
+      .fontColor(this.noteInput.length > 0 ? Colors.ink : Colors.inkMuted)
+      .width('100%');
   }
 
   @Builder
   private ChecklistModule() {
     Text(this.store.listSummaryText(this.matterId))
-      .fontSize(28)
-      .fontWeight(FontWeight.Bold)
-      .fontColor(Colors.primary);
+      .fontSize(TypeSize.figure)
+      .fontWeight(TypeWeight.semibold)
+      .fontColor(Colors.ink)
+      .fontFeature(TABULAR_NUMS);
 
-    Row({ space: Space.small }) {
+    Row({ space: Space.sm }) {
       TextInput({ placeholder: '列表项', text: this.checklistInput })
-        .height(42)
-        .fontSize(15)
-        .backgroundColor(Colors.surfaceSoft)
-        .borderRadius(Radius.normal)
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontColor(Colors.ink)
+        .placeholderColor(Colors.inkMuted)
+        .caretColor(Colors.red)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.md, right: Space.md })
         .layoutWeight(1)
         .onChange((value: string) => {
           this.checklistInput = value;
         });
       Button('添加')
-        .fontSize(15)
-        .fontColor(Color.White)
-        .backgroundColor(Colors.primary)
-        .borderRadius(Radius.normal)
+        .type(ButtonType.Normal)
+        .constraintSize({ minHeight: 40 })
+        .fontSize(TypeSize.body)
+        .fontWeight(TypeWeight.semibold)
+        .fontColor(Colors.ink)
+        .backgroundColor(Colors.wash)
+        .borderRadius(Radius.card)
+        .padding({ left: Space.lg, right: Space.lg })
         .onClick(() => {
           this.perform(async (): Promise<void> => {
             await this.store.addChecklistItem(this.matterId, this.checklistInput);
@@ -363,14 +519,17 @@ struct MatterDetail {
           });
         });
     }
+    .width('100%');
 
     Button('添加独立事项')
+      .type(ButtonType.Normal)
       .width('100%')
-      .height(40)
-      .fontSize(14)
-      .fontColor(Colors.primary)
-      .backgroundColor(Colors.primarySoft)
-      .borderRadius(Radius.normal)
+      .constraintSize({ minHeight: 40 })
+      .fontSize(TypeSize.body)
+      .fontWeight(TypeWeight.semibold)
+      .fontColor(Colors.ink)
+      .backgroundColor(Colors.wash)
+      .borderRadius(Radius.card)
       .onClick(() => {
         router.pushUrl({
           url: 'pages/CreateMatter',
@@ -388,18 +547,23 @@ struct MatterDetail {
   @Builder
   private AvailableMatterLinks() {
     if (this.linkableMatters().length > 0) {
-      Column({ space: Space.small }) {
+      Column({ space: Space.sm }) {
         Text('关联已有事项')
-          .fontSize(14)
-          .fontColor(Colors.subText);
+          .fontSize(TypeSize.bodySmall)
+          .fontWeight(TypeWeight.regular)
+          .fontColor(Colors.inkSoft);
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(this.linkableMatters(), (matter: Matter) => {
             Button(matter.title)
-              .fontSize(13)
-              .fontColor(Colors.primary)
-              .backgroundColor(Colors.surfaceSoft)
-              .borderRadius(Radius.normal)
-              .margin({ right: Space.small, bottom: Space.small })
+              .type(ButtonType.Normal)
+              .constraintSize({ minHeight: 40 })
+              .fontSize(TypeSize.bodySmall)
+              .fontWeight(TypeWeight.regular)
+              .fontColor(Colors.ink)
+              .backgroundColor(Colors.wash)
+              .borderRadius(Radius.card)
+              .padding({ left: Space.md, right: Space.md })
+              .margin({ right: Space.sm, bottom: Space.sm })
               .onClick(() => {
                 this.perform(async (): Promise<void> => {
                   await this.store.addMatterListEntry(this.matterId, matter.id);
@@ -410,33 +574,50 @@ struct MatterDetail {
           }, (matter: Matter) => matter.id);
         }
       }
-      .width('100%');
+      .width('100%')
+      .alignItems(HorizontalAlign.Start);
     }
   }
 
   @Builder
   private ChecklistItemRow(item: ChecklistItem) {
     if (item.entryType === 'matter_ref') {
-      Row({ space: Space.small }) {
-        Column({ space: 3 }) {
+      Row({ space: Space.sm }) {
+        if (this.linkedMatterClusterColor(item)) {
+          Column()
+            .width(8)
+            .height(8)
+            .borderRadius(4)
+            .backgroundColor(this.linkedMatterClusterColor(item) ?? Colors.ink);
+        }
+        Column({ space: Space.xs }) {
           Text(this.linkedMatterTitle(item))
-            .fontSize(15)
-            .fontColor(Colors.text)
-            .maxLines(1)
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink)
+            .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis });
           Text(this.linkedMatterPrimary(item))
-            .fontSize(13)
-            .fontColor(Colors.subText)
-            .maxLines(1)
+            .fontSize(TypeSize.meta)
+            .fontWeight(TypeWeight.regular)
+            .fontColor(Colors.inkMuted)
+            .fontFeature(TABULAR_NUMS)
+            .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis });
         }
+        .alignItems(HorizontalAlign.Start)
         .layoutWeight(1);
         Button('打开')
-          .fontSize(13)
-          .fontColor(Colors.primary)
-          .backgroundColor(Colors.primarySoft)
-          .borderRadius(Radius.normal)
+          .type(ButtonType.Normal)
+          .constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.bodySmall)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.sm, right: Space.sm })
           .enabled(this.hasLinkedMatter(item))
+          .opacity(this.hasLinkedMatter(item) ? 1 : 0.4)
           .onClick(() => {
             const linked = this.store.linkedMatterFor(item);
             if (linked) {
@@ -448,39 +629,71 @@ struct MatterDetail {
           });
         this.DeleteChecklistButton(item);
       }
-      .padding({ top: 4, bottom: 4 });
+      .width('100%')
+      .constraintSize({ minHeight: 48 })
+      .alignItems(VerticalAlign.Center)
+      .padding({ top: Space.xs, bottom: Space.xs })
+      .border({ width: { top: 1 }, color: Colors.hairline });
     } else {
-      Row({ space: Space.small }) {
-        Button(item.completed ? '已完成' : '未完成')
-          .fontSize(13)
-          .fontColor(item.completed ? Color.White : Colors.primary)
-          .backgroundColor(item.completed ? Colors.success : Colors.primarySoft)
-          .borderRadius(Radius.normal)
-          .onClick(() => {
-            this.perform(async (): Promise<void> => {
-              await this.store.toggleChecklistItem(item.id);
-              this.refreshOnly();
-              this.refreshCards('已更新列表项');
-            });
+      Row({ space: Space.xs }) {
+        Button() {
+          Stack({ alignContent: Alignment.Center }) {
+            Column()
+              .width(20)
+              .height(20)
+              .borderRadius(Radius.chip)
+              .backgroundColor(item.completed ? Colors.ink : Color.Transparent)
+              .border({ width: 1, color: item.completed ? Colors.ink : Colors.line });
+            if (item.completed) {
+              Text('✓')
+                .fontSize(TypeSize.meta)
+                .fontWeight(TypeWeight.semibold)
+                .fontColor(Colors.bg);
+            }
+          }
+          .width(20)
+          .height(20);
+        }
+        .type(ButtonType.Normal)
+        .width(48)
+        .height(48)
+        .backgroundColor(Color.Transparent)
+        .borderRadius(Radius.card)
+        .margin({ left: -14 })
+        .accessibilityText(item.completed ? '标记为未完成' : '标记为已完成')
+        .onClick(() => {
+          this.perform(async (): Promise<void> => {
+            await this.store.toggleChecklistItem(item.id);
+            this.refreshOnly();
+            this.refreshCards('已更新列表项');
           });
+        });
         Text(item.title)
-          .fontSize(15)
-          .fontColor(item.completed ? Colors.subText : Colors.text)
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.regular)
+          .fontColor(item.completed ? Colors.inkMuted : Colors.ink)
           .decoration({ type: item.completed ? TextDecorationType.LineThrough : TextDecorationType.None })
           .layoutWeight(1);
         this.DeleteChecklistButton(item);
       }
-      .padding({ top: 4, bottom: 4 });
+      .width('100%')
+      .constraintSize({ minHeight: 48 })
+      .alignItems(VerticalAlign.Center)
+      .border({ width: { top: 1 }, color: Colors.hairline });
     }
   }
 
   @Builder
   private DeleteChecklistButton(item: ChecklistItem) {
     Button('删除')
-      .fontSize(13)
-      .fontColor(Colors.danger)
-      .backgroundColor('#FFE7ED')
-      .borderRadius(Radius.normal)
+      .type(ButtonType.Normal)
+      .constraintSize({ minHeight: 40 })
+      .fontSize(TypeSize.bodySmall)
+      .fontWeight(TypeWeight.semibold)
+      .fontColor(Colors.red)
+      .backgroundColor(Color.Transparent)
+      .borderRadius(Radius.card)
+      .padding({ left: Space.sm, right: Space.sm })
       .onClick(() => {
         this.perform(async (): Promise<void> => {
           await this.store.deleteChecklistItem(item.id);
@@ -506,5 +719,13 @@ struct MatterDetail {
   private linkedMatterPrimary(item: ChecklistItem): string {
     const linked = this.store.linkedMatterFor(item);
     return linked ? this.store.cardPrimaryText(linked) : '关联事项不可用';
+  }
+
+  private linkedMatterClusterColor(item: ChecklistItem): Resource | undefined {
+    const linked = this.store.linkedMatterFor(item);
+    if (!linked?.clusterId) {
+      return undefined;
+    }
+    return resolveClusterColor(this.store.clusterColor(linked.clusterId));
   }
 }

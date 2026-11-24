@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ToDone ·「墨纸」首页三种线框规则</title>
+<style>
+  * { box-sizing: border-box; }
+  html { background: #121110; }
+  body {
+    margin: 0;
+    background: #121110;
+    color: #F4EFE4;
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; cursor: pointer; }
+
+  .page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 56px 32px 0;
+  }
+  .eyebrow {
+    display: flex; align-items: center; gap: 10px;
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 10px; letter-spacing: 3px; color: #A79E8E;
+  }
+  .eyebrow i {
+    width: 6px; height: 6px; border-radius: 50%; background: #D9603F;
+    display: inline-block;
+  }
+  h1 {
+    margin: 18px 0 0;
+    font-size: 40px; line-height: 1.25; font-weight: 600;
+    letter-spacing: .5px; color: #F4EFE4;
+  }
+  .lede {
+    margin: 16px 0 0; max-width: 800px;
+    font-size: 15px; line-height: 1.8; color: #B9B1A2;
+  }
+  .lede b { color: #EDE7DA; font-weight: 600; }
+
+  .toolbar { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-top: 26px; }
+  .seg {
+    display: inline-flex; padding: 3px; gap: 2px;
+    background: #1D1B17; border: 1px solid rgba(244,239,228,.12); border-radius: 5px;
+  }
+  .seg button {
+    height: 32px; padding: 0 15px; border: 0; border-radius: 3px;
+    background: transparent; color: #9C9486; font-size: 12px; letter-spacing: .5px;
+  }
+  .seg button.active { background: #F4EFE4; color: #1A1815; }
+  .toolbar-note { margin: 0; font-size: 12px; color: #8E8678; }
+
+  .stage {
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start;
+    gap: 36px; margin: 42px auto 0; padding: 0 32px 24px;
+  }
+  .phone-figure { margin: 0; width: 410px; }
+  .phone-figure figcaption {
+    display: flex; gap: 12px; align-items: flex-start;
+    margin-bottom: 14px; min-height: 58px;
+  }
+  .badge {
+    flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%;
+    border: 1px solid #D9603F; color: #D9603F;
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 10px; line-height: 20px; text-align: center;
+  }
+  .phone-figure figcaption strong { display: block; font-size: 13px; color: #EDE7DA; font-weight: 600; }
+  .phone-figure figcaption span { display: block; margin-top: 5px; font-size: 11.5px; line-height: 1.65; color: #8E8678; }
+
+  .phone {
+    position: relative; width: 410px; height: 864px; padding: 10px;
+    border-radius: 46px; background: #090807;
+    box-shadow: 0 34px 90px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.09);
+  }
+  .screen {
+    position: relative; width: 390px; height: 844px; overflow: hidden;
+    display: flex; flex-direction: column;
+    border-radius: 37px; background: var(--paper); color: var(--ink);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+  }
+
+  /* ---- Palettes: four complete combinations, so a mode switch never leaves a stale variable ---- */
+  .phone.heavy {
+    --paper: #FAF6EE; --card: #FEFCF7; --ink: #23211C; --soft: #57544B; --muted: #98938A;
+    --line: #23211C; --red: #C73E1D; --red-soft: #F4E0D5;
+    --purple: #6A5C8C; --green: #2E6E62; --yellow: #B9822C;
+    --ink-wash: rgba(35,33,28,.06); --track: rgba(35,33,28,.06);
+  }
+  .phone.heavy[data-mode="night"] {
+    --paper: #1B1916; --card: #211E1A; --ink: #EDE7DA; --soft: #C4BCAD; --muted: #8C8578;
+    --line: #EDE7DA; --red: #E4684A; --red-soft: #3A211A;
+    --purple: #A99AC9; --green: #83B7A8; --yellow: #D8AB60;
+    --ink-wash: rgba(237,231,218,.08); --track: rgba(237,231,218,.10);
+  }
+  .phone.light {
+    --paper: #FAF6EE; --card: #FEFCF7; --ink: #23211C; --soft: #57544B; --muted: #6F6A60;
+    --line: rgba(35,33,28,.13); --red: #C73E1D; --red-soft: #F4E0D5;
+    --purple: #6A5C8C; --green: #2E6E62; --yellow: #B9822C;
+    --ink-wash: rgba(35,33,28,.07); --track: rgba(35,33,28,.06);
+  }
+  .phone.light[data-mode="night"] {
+    --paper: #191714; --card: #201D19; --ink: #EFE9DC; --soft: #C0B8A9; --muted: #A79F91;
+    --line: rgba(239,233,220,.16); --red: #E8755A; --red-soft: #3A211A;
+    --purple: #B3A2D4; --green: #8BBFAF; --yellow: #DDB26A;
+    --ink-wash: rgba(239,233,220,.10); --track: rgba(239,233,220,.10);
+  }
+
+  /* ---- Shared chrome ---- */
+  .status {
+    height: 44px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between;
+    color: var(--ink); flex: 0 0 auto;
+  }
+  .status .time { font-size: 14px; font-weight: 600; letter-spacing: .2px; }
+  .status .icons { display: flex; align-items: center; gap: 6px; opacity: .92; }
+
+  .homebar {
+    flex: 0 0 auto; width: 134px; height: 5px; border-radius: 2.5px;
+    background: var(--ink); opacity: .88; margin: 0 auto 9px;
+  }
+  .spacer { flex: 1 1 auto; }
+
+  .mono { font-family: "SF Mono", "JetBrains Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+  /* ================= A · 现文档版 ================= */
+  #heavy .h-brand {
+    flex: 0 0 auto; display: flex; align-items: baseline; justify-content: space-between;
+    padding: 10px 24px 0;
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 10px; letter-spacing: 3.2px; color: var(--ink);
+  }
+  #heavy .h-brand span { font-size: 9px; letter-spacing: 1.4px; color: var(--muted); }
+
+  #heavy .h-title {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px 0;
+  }
+  #heavy .h-title h2 {
+    margin: 0; font-size: 36px; line-height: 1.05; font-weight: 700; letter-spacing: .5px;
+  }
+  #heavy .reddot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--red); margin-left: 8px; vertical-align: .62em;
+  }
+  #heavy .h-stats {
+    padding: 6px 24px 0; font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 9px; letter-spacing: 1.3px; color: var(--muted); white-space: nowrap;
+  }
+  #heavy .h-actions { display: flex; align-items: center; gap: 7px; }
+  #heavy .btn {
+    height: 32px; padding: 0 12px; border-radius: 3px;
+    border: 1px solid var(--line); background: transparent; color: var(--ink);
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  #heavy .btn.primary { background: var(--red); border-color: var(--red); color: var(--paper); }
+
+  #heavy .rule-double {
+    flex: 0 0 auto; height: 6px; margin: 12px 24px;
+    border-top: 2px solid var(--line); border-bottom: 1px solid var(--line);
+  }
+
+  #heavy .search {
+    flex: 0 0 auto; height: 36px; margin: 0 24px;
+    display: flex; align-items: center; gap: 8px; padding: 0 11px;
+    border: 1px solid var(--line); border-radius: 3px;
+    background: var(--card); color: var(--muted); font-size: 13px;
+  }
+  #heavy .search svg { flex: 0 0 auto; }
+
+  #heavy .filters { flex: 0 0 auto; display: flex; gap: 8px; padding: 12px 24px 0; }
+  #heavy .filter {
+    height: 28px; padding: 0 11px; border-radius: 3px;
+    border: 1px solid var(--line); background: var(--card);
+    color: var(--soft); font-size: 11px;
+  }
+  #heavy .filter.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+
+  #heavy .cards { flex: 0 0 auto; padding: 14px 24px 0; }
+  #heavy .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 4px;
+    padding: 13px 14px; margin-bottom: 10px;
+  }
+  #heavy .c-top { display: flex; align-items: center; gap: 8px; }
+  #heavy .c-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--purple); }
+  #heavy .c-title { margin: 0; flex: 1 1 auto; font-size: 16px; font-weight: 600; line-height: 1.35; letter-spacing: .2px; }
+  #heavy .grip { color: var(--muted); font-size: 13px; line-height: 1; letter-spacing: -1px; }
+  #heavy .c-note { margin: 5px 0 0 18px; font-size: 12px; line-height: 1.5; color: var(--soft); }
+  #heavy .c-meta { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 0 18px; }
+  #heavy .chip-func {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 10px; line-height: 1; padding: 4px 7px 5px; border-radius: 3px;
+    background: color-mix(in srgb, var(--c) 10%, var(--card)); color: var(--c);
+    white-space: nowrap;
+  }
+  #heavy .chip-func.solid { background: var(--red); color: var(--paper); }
+  #heavy .bar { height: 4px; border-radius: 2px; background: var(--track); margin: 9px 0 0 18px; overflow: hidden; }
+  #heavy .bar i { display: block; height: 100%; border-radius: 2px; }
+
+  #heavy .h-actions-row {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid rgba(35,33,28,.10);
+  }
+  #heavy .hbtn {
+    height: 32px; padding: 0 10px; border-radius: 3px;
+    border: 1px solid var(--line); background: transparent; color: var(--ink);
+    font-size: 12px; white-space: nowrap;
+  }
+  #heavy .hbtn.primary { background: var(--red); border-color: var(--red); color: var(--paper); font-weight: 600; }
+  #heavy .hbtn.danger { color: var(--red); border-color: var(--red); }
+
+  #heavy .hint {
+    flex: 0 0 auto; text-align: center; font-size: 10px; letter-spacing: .4px;
+    color: var(--muted); padding: 4px 0 10px;
+  }
+
+  /* ================= B · 减重版 ================= */
+  #light .h-title {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px 0;
+  }
+  #light .h-title h2 {
+    margin: 0; font-size: 30px; line-height: 1.1; font-weight: 600; letter-spacing: .4px;
+  }
+  #light .h-sub { padding: 7px 24px 0; font-size: 13px; color: var(--soft); }
+  #light .h-sub .mn { font-family: "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12px; font-weight: 500; }
+  #light .h-actions { display: flex; align-items: center; gap: 10px; }
+  #light .btn-text {
+    height: 40px; padding: 0 4px; border: 0; background: transparent;
+    color: var(--soft); font-size: 13px; white-space: nowrap;
+  }
+  #light .btn {
+    height: 40px; padding: 0 15px; border-radius: 4px; border: 0;
+    background: var(--red); color: var(--paper); font-size: 13px; font-weight: 600; white-space: nowrap;
+  }
+
+  #light .rule-single {
+    flex: 0 0 auto; height: 1px; margin: 14px 24px 0; background: var(--line);
+  }
+
+  #light .search {
+    flex: 0 0 auto; height: 40px; margin: 16px 24px 0;
+    display: flex; align-items: center; gap: 9px; padding: 0 12px;
+    border: 0; border-radius: 4px; background: var(--ink-wash);
+    color: var(--muted); font-size: 13px;
+  }
+
+  #light .filters { flex: 0 0 auto; display: flex; gap: 6px; padding: 14px 24px 0; }
+  #light .filter {
+    height: 32px; padding: 0 12px; border: 0; border-radius: 4px;
+    background: transparent; color: var(--soft); font-size: 12px;
+  }
+  #light .filter.on { background: var(--ink-wash); color: var(--ink); }
+
+  #light .cards { flex: 0 0 auto; padding: 16px 24px 0; }
+  #light .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 4px;
+    padding: 16px; margin-bottom: 14px;
+  }
+  #light .c-top { display: flex; align-items: center; }
+  #light .c-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--purple); margin-right: 9px; }
+  #light .c-title { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; letter-spacing: .2px; }
+  #light .c-note { margin: 7px 0 0 19px; font-size: 13px; line-height: 1.6; color: var(--soft); }
+  #light .c-meta {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px;
+    margin: 10px 0 0 19px; font-size: 12px; color: var(--muted);
+  }
+  #light .c-meta b { font-family: "SF Mono", "JetBrains Mono", Menlo, monospace; font-weight: 500; font-size: 11px; color: var(--soft); }
+  #light .c-meta .sep { color: var(--muted); opacity: .55; }
+  #light .c-meta .urgent { color: var(--red); font-weight: 600; }
+  #light .bar { height: 3px; border-radius: 2px; background: var(--track); margin: 14px 0 0 19px; overflow: hidden; }
+  #light .bar i { display: block; height: 100%; border-radius: 2px; }
+
+  #light .l-actions {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+  }
+  #light .lbtn {
+    height: 40px; padding: 0 14px; border: 0; border-radius: 4px;
+    background: transparent; color: var(--soft); font-size: 13px;
+  }
+  #light .lbtn.primary { background: transparent; color: var(--ink); font-weight: 600; padding: 0 2px; }
+  #light .lbtn.danger { color: var(--red); }
+  #light .spacer-actions { flex: 1 1 auto; }
+
+  #light .hint {
+    flex: 0 0 auto; text-align: center; font-size: 12px;
+    color: var(--muted); padding: 4px 0 10px;
+  }
+
+  /* ================= D · 只框事项 ================= */
+  .phone.matter {
+    --paper: #FAF6EE; --card: #FEFCF7; --ink: #23211C; --soft: #57544B; --muted: #6F6A60;
+    --line: rgba(35,33,28,.34); --frame: #23211C; --red: #C73E1D; --red-soft: #F4E0D5;
+    --purple: #6A5C8C; --green: #2E6E62; --yellow: #B9822C;
+    --ink-wash: rgba(35,33,28,.07); --track: rgba(35,33,28,.06);
+  }
+  .phone.matter[data-mode="night"] {
+    --paper: #191714; --card: #201D19; --ink: #EFE9DC; --soft: #C0B8A9; --muted: #A79F91;
+    --line: rgba(239,233,220,.34); --frame: #EFE9DC; --red: #E8755A; --red-soft: #3A211A;
+    --purple: #B3A2D4; --green: #8BBFAF; --yellow: #DDB26A;
+    --ink-wash: rgba(239,233,220,.10); --track: rgba(239,233,220,.10);
+  }
+
+  #matter .h-title {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px 0;
+  }
+  #matter .h-title h2 { margin: 0; font-size: 30px; line-height: 1.1; font-weight: 600; letter-spacing: .4px; }
+  #matter .h-sub { padding: 7px 24px 0; font-size: 13px; color: var(--soft); }
+  #matter .h-sub .mn { font-family: "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12px; font-weight: 500; }
+  #matter .h-actions { display: flex; align-items: center; gap: 10px; }
+  #matter .btn {
+    height: 40px; padding: 0 4px; border: 0; background: transparent;
+    color: var(--soft); font-size: 13px; font-weight: 400; white-space: nowrap;
+  }
+  #matter .btn.primary {
+    padding: 0 15px; border-radius: 4px; background: var(--red);
+    color: var(--paper); font-weight: 600;
+  }
+
+  #matter .search {
+    flex: 0 0 auto; height: 40px; margin: 18px 24px 0;
+    display: flex; align-items: center; gap: 9px; padding: 0 12px;
+    border: 0; border-radius: 4px; background: var(--ink-wash);
+    color: var(--muted); font-size: 13px;
+  }
+
+  #matter .filters { flex: 0 0 auto; display: flex; gap: 6px; padding: 14px 24px 0; }
+  #matter .filter {
+    height: 32px; padding: 0 12px; border: 0; border-radius: 4px;
+    background: transparent; color: var(--soft); font-size: 12px;
+  }
+  #matter .filter.on { background: var(--ink-wash); color: var(--ink); }
+
+  #matter .cards { flex: 0 0 auto; padding: 16px 24px 0; }
+  #matter .card {
+    background: var(--card); border: 1px solid var(--frame); border-radius: 4px;
+    padding: 14px 14px 15px; margin-bottom: 12px;
+  }
+
+  #matter .c-top { display: flex; align-items: center; }
+  #matter .c-dot { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--purple); margin-right: 9px; }
+  #matter .c-title { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.4; letter-spacing: .2px; }
+  #matter .c-note { margin: 7px 0 0 19px; font-size: 13px; line-height: 1.6; color: var(--soft); }
+  #matter .c-meta {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px;
+    margin: 10px 0 0 19px; font-size: 12px; color: var(--muted);
+  }
+  #matter .c-meta b { font-family: "SF Mono", "JetBrains Mono", Menlo, monospace; font-weight: 500; font-size: 11px; color: var(--soft); }
+  #matter .c-meta .sep { color: var(--muted); opacity: .55; }
+  #matter .c-meta .urgent { color: var(--red); font-weight: 600; }
+  #matter .bar { height: 3px; border-radius: 2px; background: var(--track); margin: 14px 0 0 19px; overflow: hidden; }
+  #matter .bar i { display: block; height: 100%; border-radius: 2px; }
+
+  #matter .l-actions {
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+  }
+  #matter .lbtn {
+    height: 40px; padding: 0 14px; border: 0; border-radius: 4px;
+    background: transparent; color: var(--soft); font-size: 13px; white-space: nowrap;
+  }
+  #matter .lbtn.primary { color: var(--ink); font-weight: 600; padding: 0 2px; }
+  #matter .lbtn.danger { color: var(--red); }
+  #matter .spacer-actions { flex: 1 1 auto; }
+
+  #matter .hint {
+    flex: 0 0 auto; text-align: center; font-size: 12px;
+    color: var(--muted); padding: 4px 0 10px;
+  }
+
+  /* ---- Comparison table ---- */
+  .compare { max-width: 1120px; margin: 46px auto 0; padding: 0 32px; }
+  .compare h2 {
+    margin: 0 0 18px; font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 10px; font-weight: 500; letter-spacing: 3px; color: #A79E8E;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; padding: 10px 14px; border-bottom: 1px solid rgba(244,239,228,.16);
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 10px; font-weight: 500; letter-spacing: 2px; color: #8E8678;
+  }
+  td {
+    padding: 14px; border-bottom: 1px solid rgba(244,239,228,.08);
+    font-size: 12.5px; line-height: 1.7; vertical-align: top;
+  }
+  td:first-child { width: 104px; color: #8E8678; font-size: 12px; }
+  td.a { color: #9C9486; width: 30%; }
+  td.b { color: #BDB5A6; width: 30%; }
+  td.b b { color: #F4EFE4; font-weight: 600; }
+  td.d { color: #EDE7DA; width: 30%; }
+  td.d b { color: #F4EFE4; font-weight: 600; }
+
+  .verdict {
+    margin: 34px 0 0; padding: 20px 24px; border-left: 2px solid #D9603F;
+    background: rgba(244,239,228,.035);
+  }
+  .verdict p { margin: 0; font-size: 14px; line-height: 1.9; color: #D8D0C1; max-width: 900px; }
+  .verdict p + p { margin-top: 8px; font-size: 12.5px; color: #9C9486; }
+
+  footer {
+    max-width: 1120px; margin: 0 auto; padding: 34px 32px 54px;
+    font-size: 11px; letter-spacing: .6px; color: #6F685C;
+  }
+
+  @media (max-width: 900px) {
+    .page { padding-top: 36px; }
+    h1 { font-size: 30px; }
+    .stage { gap: 28px; }
+    .phone, .phone-figure { width: 410px; }
+    .phone { transform-origin: top center; }
+    .phone-figure { zoom: .78; }
+  }
+  @media (max-width: 620px) {
+    .phone-figure { zoom: .62; }
+    td:first-child { width: 76px; }
+    td { padding: 11px 8px; font-size: 11.5px; }
+    td.a, td.b, td.d { width: 30%; }
+  }
+</style>
+</head>
+<body>
+<header class="page">
+  <div class="eyebrow"><i></i>TODONE · DESIGN COMPARISON · 2026.11.20</div>
+  <h1>「墨纸」首页：文档版 / 减重版 / 只框事项</h1>
+  <p class="lede">同一屏、同一套色板。A 严格执行《ToDone ·「墨纸」美术指导》；B 尽量去线；D 只框事项、控件去框。切到夜纸可以看三种规则在暗色下是否成立。</p>
+  <div class="toolbar">
+    <div class="seg" role="group" aria-label="纸张模式">
+      <button class="active" data-mode="day" aria-pressed="true">亮纸</button>
+      <button data-mode="night" aria-pressed="false">夜纸</button>
+    </div>
+    <p class="toolbar-note">夜纸是新增建议：文档目前明令「只有亮纸一种底」。</p>
+  </div>
+</header>
+
+<main class="stage">
+  <figure class="phone-figure">
+    <figcaption>
+      <span class="badge">A</span>
+      <div>
+        <strong>现文档版</strong>
+        <span>品牌头、双线规、双语 mono、100% 墨线、9px 淡字、卡内 5 个操作，按文档逐条执行。</span>
+      </div>
+    </figcaption>
+
+    <div class="phone heavy" id="heavy" data-mode="day">
+      <div class="screen">
+        <div class="status">
+          <span class="time">9:41</span>
+          <span class="icons">
+            <svg width="17" height="11" viewBox="0 0 17 11" fill="none" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx=".7" fill="currentColor"/><rect x="4.5" y="5" width="3" height="6" rx=".7" fill="currentColor"/><rect x="9" y="2.5" width="3" height="8.5" rx=".7" fill="currentColor"/><rect x="13.5" y="0" width="3" height="11" rx=".7" fill="currentColor"/></svg>
+            <svg width="16" height="11" viewBox="0 0 16 11" fill="none" aria-hidden="true"><path d="M1 3.2C3 1.2 5.3.2 8 .2s5 1 7 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M3.6 6C4.9 4.7 6.4 4 8 4s3.1.7 4.4 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="9.3" r="1.2" fill="currentColor"/></svg>
+            <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true"><rect x=".5" y=".5" width="21" height="11" rx="3" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="18" height="8" rx="1.6" fill="currentColor"/><path d="M23 4v4c1-.3 1.5-1 1.5-2s-.5-1.7-1.5-2Z" fill="currentColor" opacity=".5"/></svg>
+          </span>
+        </div>
+
+        <div class="h-brand">TODONE <span>11.20 THU</span></div>
+
+        <div class="h-title">
+          <h2>事项<span class="reddot"></span></h2>
+          <div class="h-actions">
+            <button class="btn">时间线</button>
+            <button class="btn primary">+ 新建</button>
+          </div>
+        </div>
+        <div class="h-stats">06 MATTERS · 02 DUE · 03 CLUSTERS</div>
+
+        <div class="rule-double"></div>
+
+        <div class="search">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="4.3" stroke="currentColor" stroke-width="1.2"/><path d="m9.4 9.4 2.8 2.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          搜索事项
+        </div>
+
+        <div class="filters">
+          <button class="filter on">记录</button>
+          <button class="filter">计数</button>
+          <button class="filter">显示归档</button>
+        </div>
+
+        <div class="cards">
+          <article class="card">
+            <div class="c-top">
+              <span class="c-dot" style="background:var(--purple)"></span>
+              <h3 class="c-title">论文开题报告</h3>
+              <span class="grip" aria-hidden="true">≡</span>
+            </div>
+            <p class="c-note">和导师确认框架后再提交</p>
+            <div class="c-meta">
+              <span class="chip-func" style="--c:var(--purple)">列表 3/5</span>
+              <span class="chip-func" style="--c:var(--purple)">截止 11.28 · D-8</span>
+              <span class="chip-func" style="--c:var(--purple)">计数 ×12</span>
+            </div>
+            <div class="bar"><i style="width:60%;background:var(--purple)"></i></div>
+          </article>
+
+          <article class="card">
+            <div class="c-top">
+              <span class="c-dot" style="background:var(--green)"></span>
+              <h3 class="c-title">健身计划</h3>
+              <span class="grip" aria-hidden="true">≡</span>
+            </div>
+            <p class="c-note">每周三次，先从跑步开始</p>
+            <div class="c-meta">
+              <span class="chip-func" style="--c:var(--green)">计数 ×21</span>
+              <span class="chip-func" style="--c:var(--green)">截止 12.01 · D-11</span>
+              <span class="chip-func" style="--c:var(--green)">备注</span>
+            </div>
+            <div class="bar"><i style="width:40%;background:var(--green)"></i></div>
+            <div class="h-actions-row">
+              <button class="hbtn primary">打开</button>
+              <button class="hbtn">上移</button>
+              <button class="hbtn">下移</button>
+              <button class="hbtn">归档</button>
+              <button class="hbtn danger">删除</button>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="c-top">
+              <span class="c-dot" style="background:var(--yellow)"></span>
+              <h3 class="c-title">读完《人类简史》</h3>
+              <span class="grip" aria-hidden="true">≡</span>
+            </div>
+            <p class="c-note">通勤路上读，本周读完第 6 章</p>
+            <div class="c-meta">
+              <span class="chip-func" style="--c:var(--yellow)">列表 2/8</span>
+              <span class="chip-func solid">截止 今天</span>
+            </div>
+            <div class="bar"><i style="width:25%;background:var(--yellow)"></i></div>
+          </article>
+        </div>
+
+        <div class="spacer"></div>
+        <div class="hint">长按拖动可排序</div>
+        <div class="homebar"></div>
+      </div>
+    </div>
+  </figure>
+
+  <figure class="phone-figure">
+    <figcaption>
+      <span class="badge">B</span>
+      <div>
+        <strong>减重版</strong>
+        <span>保留纸、墨、朱红、4px 圆角、无阴影；去掉品牌头、双线规、双语标签和满屏墨线。</span>
+      </div>
+    </figcaption>
+
+    <div class="phone light" id="light" data-mode="day">
+      <div class="screen">
+        <div class="status">
+          <span class="time">9:41</span>
+          <span class="icons">
+            <svg width="17" height="11" viewBox="0 0 17 11" fill="none" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx=".7" fill="currentColor"/><rect x="4.5" y="5" width="3" height="6" rx=".7" fill="currentColor"/><rect x="9" y="2.5" width="3" height="8.5" rx=".7" fill="currentColor"/><rect x="13.5" y="0" width="3" height="11" rx=".7" fill="currentColor"/></svg>
+            <svg width="16" height="11" viewBox="0 0 16 11" fill="none" aria-hidden="true"><path d="M1 3.2C3 1.2 5.3.2 8 .2s5 1 7 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M3.6 6C4.9 4.7 6.4 4 8 4s3.1.7 4.4 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="9.3" r="1.2" fill="currentColor"/></svg>
+            <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true"><rect x=".5" y=".5" width="21" height="11" rx="3" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="18" height="8" rx="1.6" fill="currentColor"/><path d="M23 4v4c1-.3 1.5-1 1.5-2s-.5-1.7-1.5-2Z" fill="currentColor" opacity=".5"/></svg>
+          </span>
+        </div>
+
+        <div class="h-title">
+          <h2>事项</h2>
+          <div class="h-actions">
+            <button class="btn-text">时间线</button>
+            <button class="btn">+ 新建</button>
+          </div>
+        </div>
+        <div class="h-sub"><span class="mn">11.20</span> 周四 · <span class="mn">6</span> 个事项 · <span class="mn">2</span> 个今天截止</div>
+
+        <div class="rule-single"></div>
+
+        <div class="search">
+          <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="4.3" stroke="currentColor" stroke-width="1.2"/><path d="m9.4 9.4 2.8 2.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          搜索事项
+        </div>
+
+        <div class="filters">
+          <button class="filter on">记录</button>
+          <button class="filter">计数</button>
+          <button class="filter">显示归档</button>
+        </div>
+
+        <div class="cards">
+          <article class="card">
+            <div class="c-top">
+              <span class="c-dot" style="background:var(--purple)"></span>
+              <h3 class="c-title">论文开题报告</h3>
+            </div>
+            <p class="c-note">和导师确认框架后再提交</p>
+            <div class="c-meta">
+              <span>列表 <b>3/5</b></span><span class="sep">·</span>
+              <span>截止 <b>11.28</b> · D-8</span><span class="sep">·</span>
+              <span>计数 <b>×12</b></span>
+            </div>
+            <div class="bar"><i style="width:60%;background:var(--purple)"></i></div>
+          </article>
+
+          <article class="card">
+            <div class="c-top">
+              <span class="c-dot" style="background:var(--green)"></span>
+              <h3 class="c-title">健身计划</h3>
+            </div>
+            <p class="c-note">每周三次，先从跑步开始</p>
+            <div class="c-meta">
+              <span>计数 <b>×21</b></span><span class="sep">·</span>
+              <span>截止 <b>12.01</b> · D-11</span>
+            </div>
+            <div class="bar"><i style="width:40%;background:var(--green)"></i></div>
+            <div class="l-actions">
+              <button class="lbtn primary">打开 →</button>
+              <span class="spacer-actions"></span>
+              <button class="lbtn">归档</button>
+              <button class="lbtn danger">删除</button>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="c-top">
+              <span class="c-dot" style="background:var(--yellow)"></span>
+              <h3 class="c-title">读完《人类简史》</h3>
+            </div>
+            <p class="c-note">通勤路上读，本周读完第 6 章</p>
+            <div class="c-meta">
+              <span>列表 <b>2/8</b></span><span class="sep">·</span>
+              <span class="urgent">截止 今天</span>
+            </div>
+            <div class="bar"><i style="width:25%;background:var(--yellow)"></i></div>
+          </article>
+        </div>
+
+        <div class="spacer"></div>
+        <div class="hint">长按拖动可排序</div>
+        <div class="homebar"></div>
+      </div>
+    </div>
+  </figure>
+
+<figure class="phone-figure">
+    <figcaption>
+      <span class="badge">D</span>
+      <div>
+        <strong>只框事项</strong>
+        <span>所有事项卡同一 1px 墨线；搜索、筛选、视图切换全部去框，靠浅底、字重与位置区分。</span>
+      </div>
+    </figcaption>
+
+    <div class="phone matter" id="matter" data-mode="day">
+      <div class="screen">
+        <div class="status">
+          <span class="time">9:41</span>
+          <span class="icons">
+            <svg width="17" height="11" viewBox="0 0 17 11" fill="none" aria-hidden="true"><rect x="0" y="7" width="3" height="4" rx=".7" fill="currentColor"/><rect x="4.5" y="5" width="3" height="6" rx=".7" fill="currentColor"/><rect x="9" y="2.5" width="3" height="8.5" rx=".7" fill="currentColor"/><rect x="13.5" y="0" width="3" height="11" rx=".7" fill="currentColor"/></svg>
+            <svg width="16" height="11" viewBox="0 0 16 11" fill="none" aria-hidden="true"><path d="M1 3.2C3 1.2 5.3.2 8 .2s5 1 7 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M3.6 6C4.9 4.7 6.4 4 8 4s3.1.7 4.4 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="9.3" r="1.2" fill="currentColor"/></svg>
+            <svg width="25" height="12" viewBox="0 0 25 12" fill="none" aria-hidden="true"><rect x=".5" y=".5" width="21" height="11" rx="3" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="18" height="8" rx="1.6" fill="currentColor"/><path d="M23 4v4c1-.3 1.5-1 1.5-2s-.5-1.7-1.5-2Z" fill="currentColor" opacity=".5"/></svg>
+          </span>
+        </div>
+
+        <div class="h-title">
+          <h2>事项</h2>
+          <div class="h-actions">
+            <button class="btn ghost">时间线</button>
+            <button class="btn">+ 新建</button>
+          </div>
+        </div>
+        <div class="h-sub"><span class="mn">11.20</span> 周四 · <span class="mn">6</span> 个事项 · <span class="mn">2</span> 个今天截止</div>
+
+        <div class="search">
+          <svg width="15" height="15" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="4.3" stroke="currentColor" stroke-width="1.2"/><path d="m9.4 9.4 2.8 2.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          搜索事项
+        </div>
+
+        <div class="filters">
+          <button class="filter on">记录</button>
+          <button class="filter">计数</button>
+          <button class="filter">显示归档</button>
+        </div>
+
+        <div class="cards">
+          <article class="card">
+            <div class="c-top">
+              <span class="c-dot" style="background:var(--purple)"></span>
+              <h3 class="c-title">论文开题报告</h3>
+            </div>
+            <p class="c-note">和导师确认框架后再提交</p>
+            <div class="c-meta">
+              <span>列表 <b>3/5</b></span><span class="sep">·</span>
+              <span>截止 <b>11.28</b> · D-8</span><span class="sep">·</span>
+              <span>计数 <b>×12</b></span>
+            </div>
+            <div class="bar"><i style="width:60%;background:var(--purple)"></i></div>
+          </article>
+
+          <article class="card">
+            <div class="c-top">
+              <span class="c-dot" style="background:var(--green)"></span>
+              <h3 class="c-title">健身计划</h3>
+            </div>
+            <p class="c-note">每周三次，先从跑步开始</p>
+            <div class="c-meta">
+              <span>计数 <b>×21</b></span><span class="sep">·</span>
+              <span>截止 <b>12.01</b> · D-11</span>
+            </div>
+            <div class="bar"><i style="width:40%;background:var(--green)"></i></div>
+            <div class="l-actions">
+              <button class="lbtn primary">打开 →</button>
+              <span class="spacer-actions"></span>
+              <button class="lbtn">归档</button>
+              <button class="lbtn danger">删除</button>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="c-top">
+              <span class="c-dot" style="background:var(--yellow)"></span>
+              <h3 class="c-title">读完《人类简史》</h3>
+            </div>
+            <p class="c-note">通勤路上读，本周读完第 6 章</p>
+            <div class="c-meta">
+              <span>列表 <b>2/8</b></span><span class="sep">·</span>
+              <span class="urgent">截止 今天</span>
+            </div>
+            <div class="bar"><i style="width:25%;background:var(--yellow)"></i></div>
+          </article>
+        </div>
+
+        <div class="spacer"></div>
+        <div class="hint">长按拖动可排序</div>
+        <div class="homebar"></div>
+      </div>
+    </div>
+  </figure>
+</main>
+
+<section class="compare">
+  <h2>WHAT CHANGED / 只动这些</h2>
+  <table>
+    <thead>
+      <tr><th>维度</th><th>A · 文档版</th><th>B · 减重版</th><th>D · 只框事项</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>视觉层级</td><td class="a">品牌头 → 大标题 → 双线规 → 统计 → 卡片，五层</td><td class="b">标题 → 搜索 → 列表，三层</td><td class="d">标题 → 搜索 → 事项卡，三级；<b>只有卡有框</b></td></tr>
+      <tr><td>容器边界</td><td class="a">每张卡 100% 墨线；纸与卡本身只差 1.05:1</td><td class="b">13% 发丝线 + 16px 内距，边界在，但不抢眼</td><td class="d"><b>每张事项卡 1px 墨线，权重相同</b>；控件 0 框</td></tr>
+      <tr><td>标签</td><td class="a">中英双语、mono 统计、标题红点、彩色 chip</td><td class="b">只留中文；日期与数字用 mono</td><td class="d">只留中文；日期与数字用 mono</td></tr>
+      <tr><td>字号</td><td class="a">正文 12、辅助 9–10</td><td class="b">正文 13、辅助 12</td><td class="d">正文 13、辅助 12</td></tr>
+      <tr><td>对比度</td><td class="a">墨淡 2.83:1；山吹黄 chip 2.94:1；朱红 chip 4.29:1</td><td class="b">信息文字 ≥4.5:1</td><td class="d">信息文字 ≥4.5:1</td></tr>
+      <tr><td>交互控件</td><td class="a">搜索、筛选、视图切换全部 1px 墨线</td><td class="b">无描边，靠浅底与文字色</td><td class="d"><b>全部去框</b>，靠浅底、字重、位置区分</td></tr>
+      <tr><td>卡内操作</td><td class="a">打开 / 上移 / 下移 / 归档 / 删除，五个并排</td><td class="b">打开 / 归档 / 删除；排序回长按拖拽</td><td class="d">打开 / 归档 / 删除；排序回长按拖拽</td></tr>
+      <tr><td>朱红用量</td><td class="a">实际 5 处：新建、红点、今日、打开、删除</td><td class="b">3 处：新建、今天截止、删除</td><td class="d">3 处：新建、今天截止、删除</td></tr>
+      <tr><td>触控</td><td class="a">按钮 32、chip 28</td><td class="b">按钮 40、chip 32</td><td class="d">按钮 40、chip 32</td></tr>
+      <tr><td>夜间</td><td class="a">明令只有亮纸一种底</td><td class="b">反色，同一身份</td><td class="d">反色，同一规则</td></tr>
+    </tbody>
+  </table>
+
+  <div class="verdict">
+    <p>你说得对，上一版把“当前卡”加强框，逻辑错了：每个事项都能点开，强框会被读成“只有这张能点”或“这张被选中”。线的语义应该跟对象走，而不是跟状态走。</p>
+    <p>D 的规则只有一句：<b>框 = 事项对象；无框 = 控件。</b>所有事项卡同一 1px 墨线，不因为展开而加强；搜索、筛选、视图切换全部去框，靠浅底、字重和位置区分。</p>
+    <p>这样每一条线都在回答同一个问题：“这是不是一个能点开的事项？”不会再出现“这张为什么有框、那张为什么没有”的歧义。代价是页面顶部没有横线，靠留白和字号撑；如果觉得太散，可以加一条页面细线，但那会破坏“只框事项”的规则。</p>
+  </div>
+</section>
+
+<footer>ToDone ·「墨纸」首页对照 · 2026-11-20 · 设计演示，未改动应用主题 · 字体为系统回退（PingFang SC / Menlo），未内嵌站酷庆科黄油体与 JetBrains Mono</footer>
+
+<script>
+  (function () {
+    var buttons = Array.prototype.slice.call(document.querySelectorAll('.seg button'));
+    var phones = Array.prototype.slice.call(document.querySelectorAll('.phone'));
+    buttons.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var mode = btn.getAttribute('data-mode');
+        buttons.forEach(function (b) {
+          var on = b === btn;
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-pressed', String(on));
+        });
+        phones.forEach(function (phone) { phone.setAttribute('data-mode', mode); });
+      });
+    });
+
+    var initial = location.hash === '#night' ? 'night' : 'day';
+    var initialButton = document.querySelector('.seg button[data-mode="' + initial + '"]');
+    if (initialButton) initialButton.click();
+  })();
+</script>
+</body>
+</html>

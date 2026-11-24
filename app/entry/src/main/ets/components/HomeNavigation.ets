@@ -1,4 +1,4 @@
-import { Colors, Space } from '../common/Theme';
+import { Colors, Radius, Space } from '../common/Theme';
 
 export enum HomeTab {
   Cards = '卡片',
@@ -10,7 +10,7 @@ export enum HomeTab {
 export const DOCK_HEIGHT: number = 38;
 const DOCK_TOUCH_HEIGHT: number = 44;
 export const DOCK_MARGIN: number = 3;
-export const DOCK_CLEARANCE: number = DOCK_TOUCH_HEIGHT + DOCK_MARGIN + Space.tiny;
+export const DOCK_CLEARANCE: number = DOCK_TOUCH_HEIGHT + DOCK_MARGIN + Space.xs;
 
 export enum HomeGlyph {
   Cards, Timeline, Review, Settings, Hint, Search, Add
@@ -30,13 +30,13 @@ const ICON_PATHS: string[] = [
 @Component
 export struct HomeIcon {
   @Prop glyph: HomeGlyph;
-  @Prop ink: string = Colors.text;
-  @Prop iconSize: number = 24;
+  @Prop ink: ResourceColor = Colors.ink;
+  @Prop iconSize: number = 20;
   build() {
     Shape() {
       Path().commands(ICON_PATHS[this.glyph])
     }.width(this.iconSize).height(this.iconSize).viewPort({ x: 0, y: 0, width: '24px', height: '24px' })
-    .fill(Color.Transparent).stroke(this.ink).strokeWidth('1.8px')
+    .fill(Color.Transparent).stroke(this.ink).strokeWidth('1.5px')
     .strokeLineCap(LineCapStyle.Round).strokeLineJoin(LineJoinStyle.Round)
     .hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
   }
@@ -49,21 +49,23 @@ export struct HomeDock {
 
   @Builder
   private Item(tab: HomeTab, glyph: HomeGlyph) {
-    Button({ type: ButtonType.Capsule }) {
+    Button({ type: ButtonType.Normal }) {
       Row() {
-        HomeIcon({ glyph: glyph, ink: this.tab === tab ? Colors.text : Colors.subText, iconSize: 20 })
-      }.width('100%').height(30).justifyContent(FlexAlign.Center).borderRadius(15)
-      .backgroundColor(this.tab === tab ? '#F1F3F5' : Color.Transparent)
+        HomeIcon({ glyph: glyph, ink: this.tab === tab ? Colors.ink : Colors.inkSoft, iconSize: 20 })
+      }.width('100%').height(30).justifyContent(FlexAlign.Center).borderRadius(Radius.chip)
+      .backgroundColor(this.tab === tab ? Colors.wash : Color.Transparent)
     }.height(DOCK_TOUCH_HEIGHT).layoutWeight(1).padding(0).backgroundColor(Color.Transparent)
+    .borderRadius(Radius.chip)
     .enabled(tab !== HomeTab.Review)
+    .opacity(tab === HomeTab.Review ? 0.4 : 1)
     .accessibilityText(tab + (tab === this.tab ? '，已选中' : ''))
     .onClick(() => this.onSelect(tab))
   }
 
   build() {
     Stack() {
-      Row().width('100%').height(DOCK_HEIGHT).backgroundColor('#FAFFFFFF').borderRadius(DOCK_HEIGHT / 2)
-        .border({ width: 1, color: Colors.border }).shadow({ radius: 7, color: '#200F1A27', offsetY: 2 })
+      Row().width('100%').height(DOCK_HEIGHT).backgroundColor(Colors.card).borderRadius(Radius.card)
+        .border({ width: 1, color: Colors.hairline })
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
       Row({ space: 2 }) {
         this.Item(HomeTab.Cards, HomeGlyph.Cards)

@@ -32,7 +32,7 @@ export function createCardBindingData(store: MatterStore, formId: string = ''): 
   const matterId = primaryMatter ? primaryMatter.id : '';
   const primary = primaryMatter ? store.cardPrimaryText(primaryMatter) : '暂无事项';
   const secondary = primaryMatter ? store.moduleSummary(primaryMatter) : '打开 App 创建事项';
-  const color = primaryMatter ? store.clusterColor(primaryMatter.clusterId) : '#2F7BFF';
+  const color = primaryMatter ? store.clusterColor(primaryMatter.clusterId) : '';
   const quickActionLabel = primaryMatter ? store.cardQuickActionLabel(primaryMatter) : '打开';
   const quickActionType = primaryMatter ? store.cardQuickActionType(primaryMatter) : 'open';
 

@@ -1,6 +1,6 @@
 import { AnimatorResult } from '@kit.ArkUI';
 import { pad2 } from '../common/DateFormat';
-import { Colors, Space } from '../common/Theme';
+import { Colors, Radius, Space, TABULAR_NUMS, TypeSize, TypeWeight } from '../common/Theme';
 import { TimelineBlock, TimelineTag } from '../contracts/TimelineService';
 import { DEFAULT_RING_COLOR } from '../domain/TimelineDayRing';
 import { localDayStart, timelineBlocksForDay, timelineDayHeading } from '../domain/TimelineLayout';
@@ -206,29 +206,34 @@ export struct TimelineBrowseDates {
     Column() {
       Row() {
         Text(timelineDayHeading(this.day, this.today) + ' · ' + this.entries.length + '项')
-          .layoutWeight(1).fontSize(14).fontWeight(FontWeight.Medium).fontColor(Colors.text)
-        Button('回今天').height(PREVIEW_HEADER_HEIGHT).padding({ left: Space.small, right: Space.small })
-          .backgroundColor(Color.Transparent).fontColor(Colors.primary).fontSize(14)
+          .layoutWeight(1).fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink).fontFeature(TABULAR_NUMS)
+        Button('回今天', { type: ButtonType.Normal }).height(PREVIEW_HEADER_HEIGHT)
+          .padding({ left: Space.sm, right: Space.sm }).borderRadius(Radius.card)
+          .backgroundColor(Color.Transparent).fontColor(Colors.ink)
+          .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold)
           .onClick(() => {
             this.onSelectDay(this.today);
             this.calendarScroll.scrollTo({ xOffset: 0, yOffset: 0, animation: false });
           })
       }.width('100%').height(PREVIEW_HEADER_HEIGHT)
       if (this.readError.length > 0) {
-        Button('日程读取失败，重试').height(PREVIEW_ROW_HEIGHT).fontColor(Colors.primary)
-          .backgroundColor(Color.Transparent).onClick(() => this.onRetry())
+        Button('日程读取失败，重试', { type: ButtonType.Normal }).height(PREVIEW_ROW_HEIGHT)
+          .fontSize(TypeSize.bodySmall).fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.red).backgroundColor(Color.Transparent).borderRadius(Radius.card)
+          .onClick(() => this.onRetry())
       } else if (this.entries.length === 0) {
         Text('这天暂无安排').width('100%').height(PREVIEW_ROW_HEIGHT)
-          .fontSize(14).fontColor(Colors.subText)
+          .fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft)
       } else {
         List({ scroller: this.previewScroll }) {
           ForEach(this.entries, (block: TimelineBlock) => {
             ListItem() {
-              Row({ space: Space.small }) {
-                Row().width(7).height(7).borderRadius(4).backgroundColor(this.blockColor(block))
-                Text(this.timeRange(block)).fontSize(13).fontColor(Colors.subText)
+              Row({ space: Space.sm }) {
+                Row().width(8).height(8).borderRadius(4).backgroundColor(this.blockColor(block))
+                Text(this.timeRange(block)).fontSize(TypeSize.meta).fontColor(Colors.inkMuted).fontFeature(TABULAR_NUMS)
                 Text(block.title).layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .fontSize(15).fontColor(Colors.text)
+                  .fontSize(TypeSize.body).fontColor(Colors.ink)
               }.width('100%').height(PREVIEW_ROW_HEIGHT).accessibilityGroup(true)
               .onClick(() => this.onSelectBlock(block))
             }
@@ -236,7 +241,8 @@ export struct TimelineBrowseDates {
         }.width('100%').layoutWeight(1).enableScrollInteraction(this.progress === 1).edgeEffect(EdgeEffect.None)
       }
     }.width('100%').layoutWeight(1).clip(true).opacity(1 - Math.abs(this.progress - 1))
-    .padding({ left: Space.large, right: Space.large })
+    .padding({ left: Space.page, right: Space.page })
+    .border({ width: { top: 1 }, color: Colors.hairline })
     .accessibilityLevel(this.progress === 1 ? 'auto' : 'no-hide-descendants')
   }
 
@@ -258,7 +264,9 @@ export struct TimelineBrowseDates {
       }.width('100%')
       .onAreaChange((_old: Area, area: Area) => { this.calendarHeight = Number(area.height); })
       this.Preview()
-    }.width('100%').height(browseHeight(this.progress, this.sizes, this.availableHeight)).clip(true).backgroundColor(Colors.surface)
+    }.width('100%').height(browseHeight(this.progress, this.sizes, this.availableHeight)).clip(true)
+    .backgroundColor(Colors.bg)
+    .border({ width: { bottom: 1 }, color: Colors.hairline })
     .parallelGesture(PanGesture({ direction: PanDirection.Vertical, distance: 8 })
       .onActionStart((event: GestureEvent) => this.startDrag(event))
       .onActionUpdate((event: GestureEvent) => this.updateDrag(event))
