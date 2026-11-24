@@ -1,0 +1,104 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#191714"
+    },
+    {
+      "name": "paper_bg",
+      "value": "#191714"
+    },
+    {
+      "name": "paper_card",
+      "value": "#201D19"
+    },
+    {
+      "name": "paper_ink",
+      "value": "#EFE9DC"
+    },
+    {
+      "name": "paper_ink_soft",
+      "value": "#C0B8A9"
+    },
+    {
+      "name": "paper_ink_muted",
+      "value": "#A79F91"
+    },
+    {
+      "name": "paper_line",
+      "value": "#A79F91"
+    },
+    {
+      "name": "paper_hairline",
+      "value": "#29EFE9DC"
+    },
+    {
+      "name": "paper_track",
+      "value": "#1AEFE9DC"
+    },
+    {
+      "name": "paper_wash",
+      "value": "#1AEFE9DC"
+    },
+    {
+      "name": "paper_dash",
+      "value": "#66EFE9DC"
+    },
+    {
+      "name": "paper_drag_shadow",
+      "value": "#1FEFE9DC"
+    },
+    {
+      "name": "accent_red",
+      "value": "#E8755A"
+    },
+    {
+      "name": "accent_red_pressed",
+      "value": "#E9836A"
+    },
+    {
+      "name": "accent_on",
+      "value": "#191714"
+    },
+    {
+      "name": "cluster_pine",
+      "value": "#8BBFAF"
+    },
+    {
+      "name": "cluster_wisteria",
+      "value": "#B3A2D4"
+    },
+    {
+      "name": "cluster_kerria",
+      "value": "#DDB26A"
+    },
+    {
+      "name": "cluster_indigo",
+      "value": "#93AFCF"
+    },
+    {
+      "name": "cluster_ink",
+      "value": "#EFE9DC"
+    },
+    {
+      "name": "cluster_pine_tint",
+      "value": "#2B2D28"
+    },
+    {
+      "name": "cluster_wisteria_tint",
+      "value": "#2F2A2C"
+    },
+    {
+      "name": "cluster_kerria_tint",
+      "value": "#332C21"
+    },
+    {
+      "name": "cluster_indigo_tint",
+      "value": "#2C2C2B"
+    },
+    {
+      "name": "cluster_ink_tint",
+      "value": "#35312D"
+    }
+  ]
+}

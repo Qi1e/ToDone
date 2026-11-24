@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { Colors, Radius, Space } from '../common/Theme';
+import { Colors, Radius, Space, TypeSize, TypeWeight } from '../common/Theme';
 import { TimelineAttachment, TimelineAttachmentKind } from '../contracts/TimelineService';
 import { openTimelineAttachment, TimelineAttachmentSession } from '../application/TimelineAttachmentFiles';
 
@@ -54,16 +54,18 @@ export struct TimelineAttachmentButton {
   @Builder
   private Choice(label: string, kind: TimelineAttachmentKind) {
     Button(label, { type: ButtonType.Normal })
-      .fontSize(14).fontColor(Colors.primary).backgroundColor(Color.Transparent)
-      .height(44).padding({ left: Space.small, right: Space.small }).borderRadius(Radius.small)
+      .fontSize(TypeSize.body).fontWeight(TypeWeight.semibold).fontColor(Colors.ink)
+      .backgroundColor(Color.Transparent)
+      .constraintSize({ minHeight: 44 }).padding({ left: Space.sm, right: Space.sm }).borderRadius(Radius.card)
       .accessibilityText(kind === TimelineAttachmentKind.Image ? '从相册选照片' : '从文件中选择附件')
+      .opacity(this.importing ? 0.4 : 1)
       .enabled(!this.importing).onClick(() => { this.pick(kind); })
   }
 
   build() {
     Row() {
       if (this.importing) {
-        LoadingProgress().width(18).height(18).color(Colors.subText).accessibilityText('正在添加附件')
+        LoadingProgress().width(18).height(18).color(Colors.inkMuted).accessibilityText('正在添加附件')
       }
       this.Choice('选照片', TimelineAttachmentKind.Image)
       this.Choice('选文件', TimelineAttachmentKind.File)
@@ -90,24 +92,28 @@ export struct TimelineAttachmentList {
   build() {
     Column() {
       ForEach(this.items, (item: TimelineAttachment) => {
-        Row({ space: Space.tiny }) {
+        Row({ space: Space.xs }) {
           Button({ type: ButtonType.Normal }) {
-            Row({ space: Space.small }) {
-              Text(kindName(item.kind)).fontSize(12).fontColor(Colors.subText)
-              Text(item.name).layoutWeight(1).fontSize(14)
-                .fontColor(item.kind === TimelineAttachmentKind.Url ? Colors.primary : Colors.text)
+            Row({ space: Space.sm }) {
+              Text(kindName(item.kind)).fontSize(TypeSize.meta).fontColor(Colors.inkMuted)
+              Text(item.name).layoutWeight(1).fontSize(TypeSize.body)
+                .fontWeight(item.kind === TimelineAttachmentKind.Url ? TypeWeight.semibold : TypeWeight.regular)
+                .fontColor(Colors.ink)
+                .decoration({ type: item.kind === TimelineAttachmentKind.Url ? TextDecorationType.Underline : TextDecorationType.None })
                 .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
             }.width('100%')
           }.layoutWeight(1).constraintSize({ minHeight: 44 })
-          .padding({ left: Space.small, right: Space.small })
-          .backgroundColor(Color.Transparent).borderRadius(Radius.small)
+          .padding({ left: Space.sm, right: Space.sm })
+          .backgroundColor(Color.Transparent).borderRadius(Radius.card)
           .accessibilityText('打开' + kindName(item.kind) + '，' + item.name).onClick(() => this.openItem(item))
           if (this.editable) {
-            Button('移除').height(44).padding({ left: Space.small, right: Space.small })
-              .fontSize(13).fontColor(Colors.subText).backgroundColor(Color.Transparent)
+            Button('移除', { type: ButtonType.Normal }).constraintSize({ minHeight: 44 })
+              .padding({ left: Space.sm, right: Space.sm })
+              .fontSize(TypeSize.bodySmall).fontWeight(TypeWeight.semibold)
+              .fontColor(Colors.red).backgroundColor(Color.Transparent).borderRadius(Radius.card)
               .accessibilityText('移除' + item.name).onClick(() => this.onRemove(item.id))
           }
-        }.width('100%')
+        }.width('100%').border({ width: { top: 1 }, color: Colors.hairline })
       }, (item: TimelineAttachment) => item.id)
     }.width('100%')
   }

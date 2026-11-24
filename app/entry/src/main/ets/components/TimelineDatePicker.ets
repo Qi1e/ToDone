@@ -1,4 +1,4 @@
-import { Colors, Space } from '../common/Theme';
+import { Colors, Radius, Space, TABULAR_NUMS, TypeSize, TypeWeight } from '../common/Theme';
 import { formatDate } from '../common/DateFormat';
 import { TimelineBlock, TimelineTag } from '../contracts/TimelineService';
 import { CalendarEntryStrip, HomeCalendarDay, HomeCalendarWeek, homeCalendarWeeks, MAX_CALENDAR_STRIPS } from '../domain/HomeMonthCalendar';
@@ -8,10 +8,9 @@ import { calendarRingWeeks, RING_DOT_DEGREES, RING_RADIUS, RING_STROKE, Timeline
 export const TIMELINE_WEEKDAYS: string[] = ['一', '二', '三', '四', '五', '六', '日'];
 const ROW_HEIGHT: number = 44;
 const RING_SIZE: number = 32;
-const CIRCLE_SIZE: number = 23;
+const CIRCLE_SIZE: number = 24;
 const PAN_THRESHOLD: number = 32;
-const SETTLE_MS: number = 230;
-const SELECTED_INK: string = '#214F93';
+const SETTLE_MS: number = 160;
 
 export function monthStart(day: number, offset: number = 0): number {
   const date = new Date(day);
@@ -83,6 +82,10 @@ export struct TimelineDayNumber {
 
   @Prop ring: TimelineRingDay = { day: 0, count: 0, arcs: [] };
 
+  private isToday(): boolean {
+    return formatDate(this.day) === formatDate(this.today);
+  }
+
   build() {
     Stack({ alignContent: Alignment.Center }) {
       if (this.ringFraction > 0 && this.ring.count > 0) {
@@ -90,11 +93,11 @@ export struct TimelineDayNumber {
       }
       Text(new Date(this.day).getDate().toString())
         .width(CIRCLE_SIZE).height(CIRCLE_SIZE).textAlign(TextAlign.Center)
-        .fontSize(15).fontWeight(this.selected ? FontWeight.Bold : FontWeight.Regular)
-        .fontColor(this.selected ? SELECTED_INK : this.muted ? Colors.subText :
-          formatDate(this.day) === formatDate(this.today) ? Colors.primary : Colors.text)
+        .fontSize(TypeSize.body).fontWeight(this.isToday() || this.selected ? TypeWeight.semibold : TypeWeight.regular)
+        .fontFeature(TABULAR_NUMS)
+        .fontColor(this.isToday() ? Colors.bg : this.selected ? Colors.ink : this.muted ? Colors.inkMuted : Colors.ink)
         .borderRadius(CIRCLE_SIZE / 2)
-        .backgroundColor(this.selected ? Colors.primarySoft : Color.Transparent);
+        .backgroundColor(this.isToday() ? Colors.ink : this.selected ? Colors.wash : Color.Transparent);
     }.width(RING_SIZE).height(RING_SIZE);
   }
 }
@@ -146,20 +149,20 @@ export struct TimelineMonthDay {
         if (this.prepareDetail || this.detail > 0) {
           if (this.cell.entries.length > this.visibleCount()) {
             Row() {
-              Text('+' + (this.cell.entries.length - this.visibleCount())).fontSize(9)
-                .fontColor(Colors.subText).maxLines(1);
+              Text('+' + (this.cell.entries.length - this.visibleCount())).fontSize(TypeSize.meta)
+                .fontColor(Colors.inkMuted).fontFeature(TABULAR_NUMS).maxLines(1);
             }.width('100%').justifyContent(FlexAlign.End).padding({ right: 2 }).opacity(this.detail)
             .hitTestBehavior(HitTestMode.None).accessibilityLevel('no-hide-descendants');
           }
           Column({ space: STRIP_GAP }) {
-            Text(this.cell.annotation).fontSize(10).fontColor('#69727C').maxLines(1)
+            Text(this.cell.annotation).fontSize(TypeSize.meta).fontColor(Colors.inkMuted).maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis }).textAlign(TextAlign.Center)
               .width('100%').height(ANNOTATION_HEIGHT);
             ForEach(this.cell.strips, (strip: CalendarEntryStrip, index: number) => {
               if (index < this.visibleCount()) {
-                Text(strip.title).fontSize(11).fontWeight(FontWeight.Medium).fontColor(strip.ink)
+                Text(strip.title).fontSize(TypeSize.meta).fontWeight(TypeWeight.semibold).fontColor(strip.ink)
                   .width('100%').height(STRIP_HEIGHT).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .padding({ left: 3, right: 2 }).backgroundColor(strip.fill).borderRadius(3);
+                  .padding({ left: 3, right: 2 }).backgroundColor(strip.fill).borderRadius(Radius.chip);
               }
             }, (strip: CalendarEntryStrip) => strip.key);
           }.width('100%').padding({ left: 3, right: 3 }).position({ x: 0, y: this.dateTop() + RING_SIZE })
@@ -167,7 +170,7 @@ export struct TimelineMonthDay {
           // 每个格子只绘制右、下两边，相邻日期的边界不会叠粗。
           Row().width('100%').height('100%').border({ width: {
             right: new Date(this.cell.day).getDay() === 0 ? 0 : 0.5, bottom: 0.5
-          }, color: '#D9DDE2' }).opacity(this.detail).hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
+          }, color: Colors.hairline }).opacity(this.detail).hitTestBehavior(HitTestMode.None).accessibilityLevel('no');
         }
       }.width('100%').height('100%').clip(true);
     }.width('100%').height(this.rowHeight).padding(0).borderRadius(0).backgroundColor(Color.Transparent)
@@ -313,27 +316,29 @@ export struct TimelineDatePicker {
   @Builder
   private Header() {
     Row() {
-      Button() {
-        Row({ space: Space.tiny }) {
+      Button({ type: ButtonType.Normal }) {
+        Row({ space: Space.xs }) {
           Text(new Date(this.month()).getFullYear() + '年' + (new Date(this.month()).getMonth() + 1) + '月')
-            .fontSize(16).fontWeight(FontWeight.Medium).fontColor(Colors.text);
-          Text(this.expanded ? '▴' : '▾').fontSize(12).fontColor(Colors.subText);
+            .fontSize(TypeSize.title).fontWeight(TypeWeight.semibold).fontColor(Colors.ink).fontFeature(TABULAR_NUMS);
+          Text(this.expanded ? '▴' : '▾').fontSize(TypeSize.meta).fontColor(Colors.inkMuted);
         }
       }
-      .height(36).padding(0).backgroundColor(Color.Transparent)
+      .height(40).padding(0).backgroundColor(Color.Transparent).borderRadius(Radius.card)
       .accessibilityText(this.expanded ? '收起月历' : '展开选日月历')
       .onClick(() => this.onToggle());
       Blank();
-      Text(this.caption).fontSize(13).fontColor(Colors.subText);
+      Text(this.caption).fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft);
       if (this.expanded) {
-        Button('‹').width(36).height(36).padding(0).fontSize(22).fontColor(Colors.text)
+        Button('‹', { type: ButtonType.Normal }).width(40).height(40).padding(0)
+          .fontSize(20).fontColor(Colors.ink).borderRadius(Radius.card)
           .backgroundColor(Color.Transparent).accessibilityText('上个月')
           .onClick(() => { this.browsedMonth = monthStart(this.month(), -1); });
-        Button('›').width(36).height(36).padding(0).fontSize(22).fontColor(Colors.text)
+        Button('›', { type: ButtonType.Normal }).width(40).height(40).padding(0)
+          .fontSize(20).fontColor(Colors.ink).borderRadius(Radius.card)
           .backgroundColor(Color.Transparent).accessibilityText('下个月')
           .onClick(() => { this.browsedMonth = monthStart(this.month(), 1); });
       }
-    }.height(36).width('100%').padding({ left: Space.small, right: Space.small });
+    }.height(40).width('100%').padding({ left: Space.sm, right: Space.sm });
   }
 
   build() {
@@ -341,7 +346,7 @@ export struct TimelineDatePicker {
       this.Header();
       Row() {
         ForEach(TIMELINE_WEEKDAYS, (name: string) => {
-          Text(name).layoutWeight(1).textAlign(TextAlign.Center).fontSize(12).fontColor(Colors.subText);
+          Text(name).layoutWeight(1).textAlign(TextAlign.Center).fontSize(TypeSize.meta).fontColor(Colors.inkMuted);
         }, (name: string) => name);
       }.width('100%').height(20);
       TimelineCalendarRows({ month: this.month(), anchorDay: this.day, day: this.day, today: this.today,
@@ -352,8 +357,9 @@ export struct TimelineDatePicker {
         }
       });
     }
-    .width('100%').padding({ left: Space.tiny, right: Space.tiny, top: Space.large, bottom: Space.tiny })
-    .backgroundColor(Colors.page)
+    .width('100%').padding({ left: Space.xs, right: Space.xs, top: Space.lg, bottom: Space.xs })
+    .backgroundColor(Colors.bg)
+    .border({ width: { bottom: 1 }, color: Colors.hairline })
     .priorityGesture(PanGesture({ direction: PanDirection.Vertical, distance: 8 })
       .onActionUpdate((event: GestureEvent) => this.drag(event.offsetY))
       .onActionEnd((event: GestureEvent) => this.release(event))

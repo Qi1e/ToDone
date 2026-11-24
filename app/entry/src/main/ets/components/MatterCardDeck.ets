@@ -3,7 +3,16 @@ import { unifiedDataChannel } from '@kit.ArkData';
 import { AnimatorResult, LengthMetrics, router } from '@kit.ArkUI';
 import { MatterServices } from '../application/MatterServices';
 import { MatterService } from '../contracts/MatterService';
-import { Colors, Radius, Space } from '../common/Theme';
+import {
+  Colors,
+  Radius,
+  Space,
+  TABULAR_NUMS,
+  TypeSize,
+  TypeWeight,
+  resolveClusterColor,
+  resolveClusterTint
+} from '../common/Theme';
 import { MODULE_OPTIONS } from '../model/Defaults';
 import { Matter, ModuleInstance, ModuleOption, ModuleType } from '../model/Types';
 import { MatterStore } from '../store/MatterStore';
@@ -22,6 +31,7 @@ export struct MatterCardDeck {
   onBrowseChange: (awayFromFront: boolean) => void = () => {};
   @State private cards: Matter[] = [];
   @State private searchText: string = '';
+  @State private searchFocused: boolean = false;
   @State private showArchived: boolean = false;
   @State private pendingDeleteMatterId: string = '';
   @State private pendingReset: boolean = false;
@@ -293,6 +303,46 @@ export struct MatterCardDeck {
     this.snapTo(this.layout.release(this.deckOffset, this.deckOffset, 0));
   }
 
+  private previewClusterRaw(target: Matter): string | undefined {
+    if (target.clusterId) {
+      return this.store.clusterColor(target.clusterId);
+    }
+    if (this.dragSourceMatterId.length > 0) {
+      const source = this.store.findMatter(this.dragSourceMatterId);
+      if (source?.clusterId) {
+        return this.store.clusterColor(source.clusterId);
+      }
+    }
+    return 'cluster.pine';
+  }
+
+  private cardBorder(matter: Matter): BorderOptions {
+    if (this.dragSourceMatterId === matter.id) {
+      return {
+        width: 1,
+        color: Colors.dash,
+        style: BorderStyle.Dashed,
+        radius: Radius.card
+      };
+    }
+    const isTarget = this.dragTargetMatterId === matter.id;
+    const barColor = isTarget
+      ? (resolveClusterColor(this.previewClusterRaw(matter)) ?? $r('app.color.cluster_pine'))
+      : (matter.clusterId ? resolveClusterColor(this.store.clusterColor(matter.clusterId)) : undefined);
+    if (barColor) {
+      return {
+        width: { left: 3, top: 1, right: 1, bottom: 1 },
+        color: { left: barColor, top: Colors.hairline, right: Colors.hairline, bottom: Colors.hairline },
+        radius: Radius.card
+      };
+    }
+    return {
+      width: 1,
+      color: Colors.hairline,
+      radius: Radius.card
+    };
+  }
+
   build() {
     Column() {
       if (this.searchOpen) {
@@ -301,7 +351,7 @@ export struct MatterCardDeck {
       Stack({ alignContent: Alignment.TopStart }) {
         if (this.cards.length === 0) {
           Text(this.searchText.trim() ? '没有匹配的事项' : this.showArchived ? '还没有归档事项' : '还没有事项')
-            .width('100%').textAlign(TextAlign.Center).fontSize(17).fontColor(Colors.subText)
+            .width('100%').textAlign(TextAlign.Center).fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft)
             .position({ x: 0, y: Math.max(0, (this.layout.viewport - DOCK_CLEARANCE) / 2 - 14) })
         } else {
           Stack({ alignContent: Alignment.TopStart }) {
@@ -314,10 +364,6 @@ export struct MatterCardDeck {
               .accessibilityLevel(this.layout.paintHeight(index, this.at) > 0 ? 'auto' : 'no-hide-descendants')
             }, (index: number) => this.cards[index].id + ':' + index + ':' + this.generation)
           }.width('100%').height('100%').translate({ y: -this.at.endLift })
-          Row().width('100%').height(22)
-            .linearGradient({ direction: GradientDirection.Bottom, colors: [['#00F7F9FC', 0], [Colors.page, 0.92]] })
-            .position({ x: 0, y: Math.max(0, this.layout.viewport - 22) }).zIndex(this.cards.length + 1)
-            .hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
         }
       }.width('100%').layoutWeight(1).clip(true)
       .onSizeChange((_old: SizeOptions, size: SizeOptions) => {
@@ -338,27 +384,27 @@ export struct MatterCardDeck {
   @Builder
   private Card(matter: Matter, index: number) {
     Stack({ alignContent: Alignment.TopStart }) {
-      Row().width('100%').height('100%').backgroundColor(Colors.subText)
-        .opacity(Math.min(0.30, Math.max(0, -this.layout.depthAt(index, this.at)) * 0.08))
+      Row().width('100%').height('100%').backgroundColor(Colors.ink)
+        .opacity(Math.min(0.16, Math.max(0, -this.layout.depthAt(index, this.at)) * 0.05))
         .hitTestBehavior(HitTestMode.None).accessibilityLevel('no')
       Scroll() {
         this.MatterRow(matter, index)
       }.enableScrollInteraction(false).scrollBar(BarState.Off).edgeEffect(EdgeEffect.None)
       .width('100%').height('100%').align(Alignment.TopStart)
-    }.width('94%').height(this.layout.faceHeight(index))
+    }.width('92%').height(this.layout.faceHeight(index))
     .constraintSize({ minHeight: this.layout.faceHeight(index) })
-    .backgroundColor(this.dragTargetMatterId === matter.id ? Colors.primarySoft : Colors.surface)
-    .borderRadius(Radius.large).clip(true)
-    .border({ width: this.dragTargetMatterId === matter.id ? 2 : 1,
-      color: this.dragTargetMatterId === matter.id ? Colors.primary : Colors.border })
-    .shadow({ radius: 5, color: '#150F1A27', offsetY: 2 })
+    .backgroundColor(this.dragTargetMatterId === matter.id
+      ? resolveClusterTint(this.previewClusterRaw(matter))
+      : Colors.card)
+    .borderRadius(Radius.card).clip(true)
+    .border(this.cardBorder(matter))
     .scale({ x: this.layout.widthScaleAt(this.layout.depthAt(index, this.at)), y: 1 })
     .rotate({ x: 1, y: 0, z: 0, centerY: '0%',
       angle: -this.layout.tiltAt(this.layout.depthAt(index, this.at)) })
     .opacity(this.layout.opacityAt(this.layout.depthAt(index, this.at)))
     .hitTestBehavior(this.layout.opacityAt(this.layout.depthAt(index, this.at)) > 0 ? HitTestMode.Default : HitTestMode.None)
     .accessibilityLevel(this.layout.opacityAt(this.layout.depthAt(index, this.at)) > 0 ? 'auto' : 'no-hide-descendants')
-    .position({ x: '3%', y: this.layout.sheetTop(index, this.at) - this.layout.paintTop(index, this.at) })
+    .position({ x: '4%', y: this.layout.sheetTop(index, this.at) - this.layout.paintTop(index, this.at) })
     .draggable(!MatterServices.isPreview())
     .onDragStart((event: DragEvent) => this.startMatterDrag(matter.id, event))
     .onDragEnter(() => {
@@ -377,40 +423,70 @@ export struct MatterCardDeck {
 
   @Builder
   private SearchBar() {
-    Column({ space: Space.small }) {
-      TextInput({ placeholder: '搜索事项', text: this.searchText })
-        .height(42)
-        .fontSize(15)
-        .backgroundColor(Colors.surface)
-        .borderRadius(Radius.normal)
-        .onChange((value: string) => {
-          this.searchText = value;
-          this.filterMatters();
-        });
+    Column({ space: Space.md }) {
+      Column() {
+        TextInput({ placeholder: '搜索事项', text: this.searchText })
+          .width('100%')
+          .constraintSize({ minHeight: 38 })
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.regular)
+          .fontColor(Colors.ink)
+          .placeholderColor(Colors.inkMuted)
+          .caretColor(Colors.red)
+          .backgroundColor(Color.Transparent)
+          .padding({ left: Space.md, right: Space.md })
+          .onFocus(() => { this.searchFocused = true; })
+          .onBlur(() => { this.searchFocused = false; })
+          .onChange((value: string) => {
+            this.searchText = value;
+            this.filterMatters();
+          });
+        Column()
+          .width('100%')
+          .height(2)
+          .backgroundColor(this.searchFocused ? Colors.ink : Color.Transparent);
+      }
+      .width('100%')
+      .backgroundColor(Colors.wash)
+      .borderRadius(Radius.card)
+      .clip(true);
 
-      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(Space.small), cross: LengthMetrics.vp(Space.tiny) } }) {
+      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(Space.sm), cross: LengthMetrics.vp(Space.xs) } }) {
         Button(this.showArchived ? '显示未归档' : '显示归档')
-          .fontSize(14)
-          .fontColor(Colors.primary)
-          .backgroundColor(Colors.primarySoft)
-          .borderRadius(Radius.normal)
+          .type(ButtonType.Normal)
+          .constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.body)
+          .fontWeight(this.showArchived ? TypeWeight.semibold : TypeWeight.regular)
+          .fontColor(this.showArchived ? Colors.ink : Colors.inkSoft)
+          .backgroundColor(this.showArchived ? Colors.wash : Color.Transparent)
+          .borderRadius(Radius.chip)
+          .padding({ left: Space.md, right: Space.md })
           .onClick(() => {
             this.showArchived = !this.showArchived;
             this.refresh();
           });
-        Button('补充示例').fontSize(14).fontColor(Colors.primary)
-          .backgroundColor(Colors.primarySoft).borderRadius(Radius.normal)
+        Button('补充示例')
+          .type(ButtonType.Normal)
+          .constraintSize({ minHeight: 40 })
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.semibold)
+          .fontColor(Colors.ink)
+          .backgroundColor(Colors.wash)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.md, right: Space.md })
+          .opacity(!this.addingExamples && !MatterServices.isPreview() ? 1 : 0.4)
           .enabled(!this.addingExamples && !MatterServices.isPreview()).onClick(() => this.addExamples())
         Button(this.pendingReset ? '确认重置' : '重置演示数据')
+          .type(ButtonType.Normal)
+          .constraintSize({ minHeight: 40 })
           .enabled(!MatterServices.isPreview())
-          .fontSize(14)
-          .fontColor(this.pendingReset ? Color.White : Colors.subText)
-          .backgroundColor(this.pendingReset ? Colors.danger : Colors.surface)
-          .borderRadius(Radius.normal)
-          .border({
-            width: 1,
-            color: Colors.border
-          })
+          .opacity(MatterServices.isPreview() ? 0.4 : 1)
+          .fontSize(TypeSize.body)
+          .fontWeight(this.pendingReset ? TypeWeight.semibold : TypeWeight.regular)
+          .fontColor(this.pendingReset ? Colors.red : Colors.inkSoft)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(Radius.card)
+          .padding({ left: Space.md, right: Space.md })
           .onClick(() => {
             this.perform(async (): Promise<void> => {
               if (!this.pendingReset) {
@@ -426,97 +502,106 @@ export struct MatterCardDeck {
             });
           });
       }
-    }.width('100%').padding({ left: Space.large, right: Space.large, top: Space.small })
+    }.width('100%').padding({ left: Space.page, right: Space.page, top: Space.sm, bottom: Space.sm })
   }
 
   @Builder
   private MatterRow(matter: Matter, index: number) {
-    Column({ space: Space.small }) {
-      Row() {
-        Column()
-          .width(6)
-          .height(54)
-          .backgroundColor(this.store.clusterColor(matter.clusterId))
-          .borderRadius(3);
-
-        Column({ space: 5 }) {
-          Row() {
-            Text(matter.title)
-              .fontSize(19)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(Colors.text)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .layoutWeight(1);
-            if (matter.clusterId) {
+    Column({ space: Space.sm }) {
+      Column({ space: Space.xs }) {
+        Row({ space: Space.sm }) {
+          Text(matter.title)
+            .fontSize(TypeSize.title)
+            .fontWeight(TypeWeight.semibold)
+            .fontColor(Colors.ink)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1);
+          if (matter.clusterId) {
+            Row({ space: Space.xs }) {
+              Column()
+                .width(8)
+                .height(8)
+                .borderRadius(4)
+                .backgroundColor(resolveClusterColor(this.store.clusterColor(matter.clusterId)) ?? Colors.ink);
               Text('弱关联')
-                .fontSize(12)
-                .fontColor(Colors.primary)
-                .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-                .backgroundColor(Colors.primarySoft)
-                .borderRadius(Radius.small);
+                .fontSize(TypeSize.meta)
+                .fontWeight(TypeWeight.regular)
+                .fontColor(Colors.inkMuted);
             }
+            .alignItems(VerticalAlign.Center);
           }
-
-          Column({ space: 5 }) {
-            Text(matter.description ?? '未填写说明')
-              .fontSize(14).fontColor(Colors.subText).maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis });
-            Text(this.store.moduleSummary(matter))
-              .fontSize(13).fontColor(Colors.subText).maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis });
-          }.width('100%').alignItems(HorizontalAlign.Start)
         }
-        .alignItems(HorizontalAlign.Start)
-        .margin({ left: Space.normal })
-        .layoutWeight(1);
+        .width('100%')
+        .alignItems(VerticalAlign.Center);
+
+        Column({ space: Space.xs }) {
+          Text(matter.description ?? '未填写说明')
+            .fontSize(TypeSize.bodySmall).fontColor(Colors.inkSoft).maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis });
+          Text(this.dragTargetMatterId === matter.id ? '松手加入关联' : this.store.moduleSummary(matter))
+            .fontSize(TypeSize.meta)
+            .fontColor(this.dragTargetMatterId === matter.id ? Colors.inkSoft : Colors.inkMuted)
+            .fontFeature(TABULAR_NUMS)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis });
+        }.width('100%').alignItems(HorizontalAlign.Start)
       }
-      .width('100%').accessibilityGroup(true).accessibilityText('打开' + matter.title)
+      .width('100%').alignItems(HorizontalAlign.Start)
+      .accessibilityGroup(true).accessibilityText('打开' + matter.title)
       .onClick(() => this.openMatter(matter));
 
-      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(Space.tiny), cross: LengthMetrics.vp(Space.tiny) } }) {
+      Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(Space.xs), cross: LengthMetrics.vp(Space.xs) } }) {
         ForEach(this.visibleModulesFor(matter).slice(0, 5), (module: ModuleInstance) => {
-          Chip({ text: this.moduleText(module), selected: true });
+          Chip({ text: this.moduleText(module), selected: false });
         }, (module: ModuleInstance) => module.id);
       }.accessibilityLevel(index < this.at.index ? 'no-hide-descendants' : 'auto')
 
-      Flex({ wrap: FlexWrap.Wrap }) {
+      Flex({ wrap: FlexWrap.Wrap, alignItems: ItemAlign.Center }) {
         Button('打开')
-          .fontSize(14)
-          .height(40)
-          .padding({ left: Space.normal, right: Space.normal })
-          .fontColor(Color.White)
-          .backgroundColor(Colors.primary)
-          .borderRadius(Radius.normal)
-          .margin({ right: Space.small, bottom: Space.tiny })
+          .type(ButtonType.Normal)
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.semibold)
+          .constraintSize({ minHeight: 40 })
+          .padding({ left: Space.sm, right: Space.sm })
+          .fontColor(Colors.ink)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(Radius.card)
+          .margin({ right: Space.xs })
           .onClick(() => this.openMatter(matter));
         Button('上移')
-          .fontSize(14)
-          .height(40)
-          .padding({ left: Space.normal, right: Space.normal })
-          .fontColor(Colors.primary)
-          .backgroundColor(Colors.primarySoft)
-          .borderRadius(Radius.normal)
-          .margin({ right: Space.small, bottom: Space.tiny })
+          .type(ButtonType.Normal)
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.regular)
+          .constraintSize({ minHeight: 40 })
+          .padding({ left: Space.sm, right: Space.sm })
+          .fontColor(Colors.inkSoft)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(Radius.card)
+          .margin({ right: Space.xs })
           .onClick(() => this.moveMatter(matter.id, -1));
         Button('下移')
-          .fontSize(14)
-          .height(40)
-          .padding({ left: Space.normal, right: Space.normal })
-          .fontColor(Colors.primary)
-          .backgroundColor(Colors.primarySoft)
-          .borderRadius(Radius.normal)
-          .margin({ right: Space.small, bottom: Space.tiny })
+          .type(ButtonType.Normal)
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.regular)
+          .constraintSize({ minHeight: 40 })
+          .padding({ left: Space.sm, right: Space.sm })
+          .fontColor(Colors.inkSoft)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(Radius.card)
+          .margin({ right: Space.xs })
           .onClick(() => this.moveMatter(matter.id, 1));
         if (matter.clusterId) {
           Button('移出簇')
-            .fontSize(14)
-            .height(40)
-            .padding({ left: Space.normal, right: Space.normal })
-            .fontColor(Colors.warning)
-            .backgroundColor('#FFF0E8')
-            .borderRadius(Radius.normal)
-            .margin({ right: Space.small, bottom: Space.tiny })
+            .type(ButtonType.Normal)
+            .fontSize(TypeSize.body)
+            .fontWeight(TypeWeight.regular)
+            .constraintSize({ minHeight: 40 })
+            .padding({ left: Space.sm, right: Space.sm })
+            .fontColor(Colors.inkSoft)
+            .backgroundColor(Color.Transparent)
+            .borderRadius(Radius.card)
+            .margin({ right: Space.xs })
             .onClick(() => {
               this.perform(async (): Promise<void> => {
                 if (this.suppressTap) return;
@@ -528,13 +613,15 @@ export struct MatterCardDeck {
             });
         }
         Button(matter.archived ? '恢复' : '归档')
-          .fontSize(14)
-          .height(40)
-          .padding({ left: Space.normal, right: Space.normal })
-          .fontColor(Colors.subText)
-          .backgroundColor(Colors.surfaceSoft)
-          .borderRadius(Radius.normal)
-          .margin({ right: Space.small, bottom: Space.tiny })
+          .type(ButtonType.Normal)
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.regular)
+          .constraintSize({ minHeight: 40 })
+          .padding({ left: Space.sm, right: Space.sm })
+          .fontColor(Colors.inkSoft)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(Radius.card)
+          .margin({ right: Space.xs })
           .onClick(() => {
             this.perform(async (): Promise<void> => {
               if (this.suppressTap) return;
@@ -546,13 +633,14 @@ export struct MatterCardDeck {
             });
           });
         Button(this.pendingDeleteMatterId === matter.id ? '确认删除' : '删除')
-          .fontSize(14)
-          .height(40)
-          .padding({ left: Space.normal, right: Space.normal })
-          .fontColor(this.pendingDeleteMatterId === matter.id ? Color.White : Colors.danger)
-          .backgroundColor(this.pendingDeleteMatterId === matter.id ? Colors.danger : '#FFE7ED')
-          .borderRadius(Radius.normal)
-          .margin({ right: Space.small, bottom: Space.tiny })
+          .type(ButtonType.Normal)
+          .fontSize(TypeSize.body)
+          .fontWeight(TypeWeight.semibold)
+          .constraintSize({ minHeight: 40 })
+          .padding({ left: Space.sm, right: Space.sm })
+          .fontColor(Colors.red)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(Radius.card)
           .onClick(() => {
             this.perform(async (): Promise<void> => {
               if (this.suppressTap) return;
@@ -567,11 +655,15 @@ export struct MatterCardDeck {
               this.refreshCards('已删除事项');
             });
           });
-      }.accessibilityLevel(index < this.at.index ? 'no-hide-descendants' : 'auto')
+      }
+      .width('100%')
+      .padding({ top: Space.xs })
+      .border({ width: { top: 1 }, color: Colors.hairline })
+      .accessibilityLevel(index < this.at.index ? 'no-hide-descendants' : 'auto')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding({ left: Space.large, right: Space.normal, top: Space.normal, bottom: Space.small })
+    .padding({ left: Space.lg, right: Space.lg, top: Space.lg, bottom: Space.sm })
     .onSizeChange((_old: SizeOptions, size: SizeOptions) => this.measureCard(matter.id, Number(size.height)))
     .enabled(!MatterServices.isPreview());
   }

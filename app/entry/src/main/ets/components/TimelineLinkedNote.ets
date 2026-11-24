@@ -1,6 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { openTimelineUrl } from '../application/TimelineAttachmentFiles';
-import { Colors } from '../common/Theme';
+import { Colors, TypeSize, TypeWeight } from '../common/Theme';
 import { TimelineNotePart, timelineNoteParts } from '../domain/TimelineNoteLinks';
 
 @Component
@@ -20,7 +20,7 @@ export struct TimelineLinkedNote {
     Text() {
       ForEach(timelineNoteParts(this.value), (part: TimelineNotePart) => {
         if (part.href !== undefined) {
-          Span(part.text).fontColor(Colors.primary)
+          Span(part.text).fontColor(Colors.ink).fontWeight(TypeWeight.semibold)
             .decoration({ type: TextDecorationType.Underline })
             .onClick(() => { if (part.href) this.open(part.href); })
         } else if (this.onEdit) {
@@ -29,6 +29,6 @@ export struct TimelineLinkedNote {
           Span(part.text)
         }
       }, (part: TimelineNotePart) => part.start.toString() + ':' + part.text)
-    }.width('100%').fontSize(16).fontColor(Colors.text)
+    }.width('100%').fontSize(TypeSize.body).fontColor(Colors.ink)
   }
 }
